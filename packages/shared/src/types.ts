@@ -115,6 +115,17 @@ export interface StateSnapshot {
   timestamp: number;
 }
 
+// Redux action log
+export interface ReduxActionEntry {
+  id: string;
+  actionType: string;
+  payload?: unknown;
+  timestamp: number;
+  duration: number;
+  changedKeys: string[];
+  storeName: string;
+}
+
 // Phase 5d: Storage
 export type StorageBackend = 'async-storage' | 'mmkv';
 

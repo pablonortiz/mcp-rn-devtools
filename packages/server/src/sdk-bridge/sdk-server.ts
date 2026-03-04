@@ -10,6 +10,7 @@ import type {
   StorageValueMessage,
   StorageBackend,
   StorageEntry,
+  ReduxActionMessage,
 } from '@mcp-rn-devtools/shared';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 import { logger } from '../utils/logger.js';
@@ -143,6 +144,12 @@ export class SDKBridgeServer {
           storageValueMsg.payload.entry,
           storageValueMsg.payload.requestId,
         );
+        break;
+      }
+
+      case 'redux:action': {
+        const actionMsg = msg as ReduxActionMessage;
+        this.connectionManager.actionManager.add(actionMsg.payload.entry);
         break;
       }
 

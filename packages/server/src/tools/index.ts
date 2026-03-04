@@ -18,6 +18,7 @@ import { registerGetStorageKeys } from './get-storage-keys.js';
 import { registerGetStorageValue } from './get-storage-value.js';
 import { registerEvaluateJS } from './evaluate-js.js';
 import { registerResolveSourceLocation } from './resolve-source-location.js';
+import { registerGetActionLog } from './get-action-log.js';
 
 export function registerAllTools(
   server: McpServer,
@@ -47,4 +48,6 @@ export function registerAllTools(
   registerEvaluateJS(server, cm);
   // Source map resolution
   registerResolveSourceLocation(server, cm);
+  // Redux action log
+  registerGetActionLog(server, cm);
 }

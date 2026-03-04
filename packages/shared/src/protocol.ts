@@ -3,6 +3,7 @@ import type {
   ErrorEntry,
   NavigationState,
   NetworkRequest,
+  ReduxActionEntry,
   RenderProfileEntry,
   StateSnapshot,
   StorageBackend,
@@ -82,6 +83,14 @@ export interface StateSnapshotMessage extends SDKMessage {
   };
 }
 
+// Redux action log (SDK → Server)
+export interface ReduxActionMessage extends SDKMessage {
+  type: 'redux:action';
+  payload: {
+    entry: ReduxActionEntry;
+  };
+}
+
 // Phase 5d: Storage responses (SDK → Server)
 export interface StorageKeysMessage extends SDKMessage {
   type: 'storage:keys';
@@ -156,7 +165,8 @@ export type SDKToServerMessage =
   | RenderProfileMessage
   | StateSnapshotMessage
   | StorageKeysMessage
-  | StorageValueMessage;
+  | StorageValueMessage
+  | ReduxActionMessage;
 
 export type ServerToSDKMessage =
   | HandshakeAckMessage

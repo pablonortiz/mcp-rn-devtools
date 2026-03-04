@@ -7,3 +7,4 @@ export { connectStateManager } from './connectors/state-connector.js';
 export type { StateStore } from './connectors/state-connector.js';
 export { connectAsyncStorage, connectMMKV } from './connectors/storage-connector.js';
 export type { AsyncStorageLike, MMKVLike } from './connectors/storage-connector.js';
+export { createDevtoolsMiddleware } from './connectors/redux-middleware.js';
