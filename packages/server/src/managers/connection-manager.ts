@@ -13,6 +13,7 @@ import { PerformanceManager } from './performance-manager.js';
 import { RenderManager } from './render-manager.js';
 import { StateManager } from './state-manager.js';
 import { StorageManager } from './storage-manager.js';
+import { SourceMapManager } from './sourcemap-manager.js';
 import { logger } from '../utils/logger.js';
 
 export class ConnectionManager extends EventEmitter {
@@ -24,16 +25,22 @@ export class ConnectionManager extends EventEmitter {
   readonly renderManager = new RenderManager();
   readonly stateManager = new StateManager();
   readonly storageManager = new StorageManager();
+  readonly sourcemapManager: SourceMapManager;
 
-  private metroPort: number;
+  private _metroPort: number;
   private reconnectTimer: ReturnType<typeof setInterval> | null = null;
   private startTime = Date.now();
   private _sdkConnected = false;
 
   constructor(metroPort: number = DEFAULT_METRO_PORT) {
     super();
-    this.metroPort = metroPort;
+    this._metroPort = metroPort;
+    this.sourcemapManager = new SourceMapManager(metroPort);
     this.setupCDPListeners();
+  }
+
+  get metroPort(): number {
+    return this._metroPort;
   }
 
   get connected(): boolean {
