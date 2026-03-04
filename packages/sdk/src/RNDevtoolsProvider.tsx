@@ -6,6 +6,7 @@ import { connectNavigation } from './connectors/navigation-connector.js';
 import { createProfilerCallback } from './connectors/profiler-connector.js';
 import { connectStateManager, type StateStore } from './connectors/state-connector.js';
 import { connectAsyncStorage, connectMMKV, type AsyncStorageLike, type MMKVLike } from './connectors/storage-connector.js';
+import type { DevtoolsMiddleware } from './connectors/redux-middleware.js';
 import { DevtoolsContext } from './context.js';
 import { SDK_WS_PORT } from '@mcp-rn-devtools/shared';
 
@@ -28,6 +29,8 @@ export interface RNDevtoolsProviderProps {
   asyncStorage?: AsyncStorageLike;
   /** MMKV instance for storage reading */
   mmkv?: MMKVLike;
+  /** Redux devtools middlewares to auto-connect. Created via createDevtoolsMiddleware(). */
+  reduxMiddlewares?: DevtoolsMiddleware[];
 }
 
 function DevtoolsProviderInner({
@@ -38,6 +41,7 @@ function DevtoolsProviderInner({
   stateManagers,
   asyncStorage,
   mmkv,
+  reduxMiddlewares,
 }: RNDevtoolsProviderProps) {
   const clientRef = useRef<WSClient | null>(null);
   const [connected, setConnected] = useState(false);
@@ -101,6 +105,21 @@ function DevtoolsProviderInner({
 
     return connectMMKV(mmkv, client);
   }, [mmkv, connected]);
+
+  // Redux middleware auto-connect
+  useEffect(() => {
+    const client = clientRef.current;
+    if (!client || !connected || !reduxMiddlewares?.length) return;
+
+    for (const mw of reduxMiddlewares) {
+      mw._attachClient(client);
+    }
+    return () => {
+      for (const mw of reduxMiddlewares) {
+        mw._detachClient();
+      }
+    };
+  }, [reduxMiddlewares, connected]);
 
   // Profiler callback for root-level tracking
   const profilerCallback = React.useMemo(() => {
