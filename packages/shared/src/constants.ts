@@ -1,0 +1,18 @@
+export const DEFAULT_METRO_PORT = 8081;
+export const SDK_WS_PORT = 8098;
+
+export const LOG_BUFFER_SIZE = 500;
+export const ERROR_BUFFER_SIZE = 200;
+export const NETWORK_BUFFER_SIZE = 500;
+
+export const RECONNECT_INTERVAL_MS = 500;
+export const MAX_RECONNECT_ATTEMPTS = 60;
+
+export const NETWORK_POLL_INTERVAL_MS = 2000;
+
+export const GLOBAL_NETWORK_KEY = '__RN_DEVTOOLS_NETWORK__';
+export const GLOBAL_INJECTED_KEY = '__RN_DEVTOOLS_INJECTED__';
+
+export const RENDER_BUFFER_SIZE = 500;
+export const RENDER_PROFILE_SLOW_THRESHOLD_MS = 16;
+export const STATE_BUFFER_SIZE = 100;
