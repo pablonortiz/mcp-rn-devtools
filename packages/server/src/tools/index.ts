@@ -16,6 +16,7 @@ import { registerGetRenderProfile } from './get-render-profile.js';
 import { registerGetAppState } from './get-app-state.js';
 import { registerGetStorageKeys } from './get-storage-keys.js';
 import { registerGetStorageValue } from './get-storage-value.js';
+import { registerEvaluateJS } from './evaluate-js.js';
 
 export function registerAllTools(
   server: McpServer,
@@ -41,4 +42,6 @@ export function registerAllTools(
   // Phase 5d: Storage
   registerGetStorageKeys(server, cm, sdkBridge);
   registerGetStorageValue(server, cm, sdkBridge);
+  // Runtime evaluation
+  registerEvaluateJS(server, cm);
 }
