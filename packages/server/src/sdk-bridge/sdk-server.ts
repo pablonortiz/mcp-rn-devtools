@@ -108,6 +108,8 @@ export class SDKBridgeServer {
       case 'navigation:state': {
         const navMsg = msg as NavigationStateMessage;
         this.lastNavigationState = navMsg.payload.state;
+        // Record navigation timing
+        this.connectionManager.navigationTimingManager.recordNavigation(this.lastNavigationState);
         // Resolve any pending navigation requests
         for (const resolve of this.navigationResolvers) {
           resolve(this.lastNavigationState);

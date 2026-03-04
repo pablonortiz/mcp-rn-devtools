@@ -15,6 +15,7 @@ import { StateManager } from './state-manager.js';
 import { StorageManager } from './storage-manager.js';
 import { SourceMapManager } from './sourcemap-manager.js';
 import { ActionManager } from './action-manager.js';
+import { NavigationTimingManager } from './navigation-timing-manager.js';
 import { logger } from '../utils/logger.js';
 
 export class ConnectionManager extends EventEmitter {
@@ -28,6 +29,7 @@ export class ConnectionManager extends EventEmitter {
   readonly storageManager = new StorageManager();
   readonly sourcemapManager: SourceMapManager;
   readonly actionManager = new ActionManager();
+  readonly navigationTimingManager = new NavigationTimingManager();
 
   private _metroPort: number;
   private reconnectTimer: ReturnType<typeof setInterval> | null = null;

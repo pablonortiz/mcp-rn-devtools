@@ -19,6 +19,7 @@ import { registerGetStorageValue } from './get-storage-value.js';
 import { registerEvaluateJS } from './evaluate-js.js';
 import { registerResolveSourceLocation } from './resolve-source-location.js';
 import { registerGetActionLog } from './get-action-log.js';
+import { registerGetNavigationTiming } from './get-navigation-timing.js';
 
 export function registerAllTools(
   server: McpServer,
@@ -50,4 +51,6 @@ export function registerAllTools(
   registerResolveSourceLocation(server, cm);
   // Redux action log
   registerGetActionLog(server, cm);
+  // Navigation timing
+  registerGetNavigationTiming(server, cm);
 }
