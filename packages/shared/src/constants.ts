@@ -5,9 +5,6 @@ export const LOG_BUFFER_SIZE = 500;
 export const ERROR_BUFFER_SIZE = 200;
 export const NETWORK_BUFFER_SIZE = 500;
 
-export const RECONNECT_INTERVAL_MS = 500;
-export const MAX_RECONNECT_ATTEMPTS = 60;
-
 export const NETWORK_POLL_INTERVAL_MS = 2000;
 
 export const GLOBAL_NETWORK_KEY = '__RN_DEVTOOLS_NETWORK__';

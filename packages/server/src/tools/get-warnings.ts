@@ -14,20 +14,15 @@ export function registerGetWarnings(server: McpServer, cm: ConnectionManager): v
     async ({ limit, since, search }) => {
       const warnings = cm.errorManager.getWarnings({ limit, since, search });
 
-      if (!cm.connected && warnings.length === 0) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: 'Not connected to a React Native app. Make sure Metro is running and a Hermes-powered app is active.',
-            },
-          ],
-        };
-      }
-
       if (warnings.length === 0) {
+        const sources: string[] = [];
+        if (cm.connected) sources.push('CDP');
+        if (cm.sdkConnected) sources.push('SDK');
+        const status = sources.length > 0
+          ? `Connected via ${sources.join(' + ')}.`
+          : 'Not connected to a React Native app. Make sure Metro is running and the SDK is installed.';
         return {
-          content: [{ type: 'text', text: 'No warnings found.' }],
+          content: [{ type: 'text', text: `No warnings found. ${status}` }],
         };
       }
 

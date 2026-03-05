@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState, type ReactNode } from 'react';
 import { isDev } from './utils/dev-guard.js';
 import { WSClient } from './bridge/ws-client.js';
 import { installNetworkInterceptor } from './interceptors/network-interceptor.js';
+import { installConsoleInterceptor } from './interceptors/console-interceptor.js';
+import { installErrorInterceptor } from './interceptors/error-interceptor.js';
 import { connectNavigation } from './connectors/navigation-connector.js';
 import { createProfilerCallback } from './connectors/profiler-connector.js';
 import { connectStateManager, type StateStore } from './connectors/state-connector.js';
@@ -50,8 +52,10 @@ function DevtoolsProviderInner({
     const client = new WSClient(port, host);
     clientRef.current = client;
 
-    // Install network interceptor
+    // Install interceptors
     const uninstallNetwork = installNetworkInterceptor(client);
+    const uninstallConsole = installConsoleInterceptor(client);
+    const uninstallErrors = installErrorInterceptor(client);
 
     // Connect
     client.connect();
@@ -64,6 +68,8 @@ function DevtoolsProviderInner({
     return () => {
       clearInterval(interval);
       uninstallNetwork();
+      uninstallConsole();
+      uninstallErrors();
       client.disconnect();
       clientRef.current = null;
     };

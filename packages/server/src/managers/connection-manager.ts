@@ -1,8 +1,6 @@
 import { EventEmitter } from 'events';
 import {
   DEFAULT_METRO_PORT,
-  RECONNECT_INTERVAL_MS,
-  MAX_RECONNECT_ATTEMPTS,
 } from '@mcp-rn-devtools/shared';
 import { CDPConnection } from '../cdp/connection.js';
 import { discoverTargets, findHermesTarget } from '../cdp/discovery.js';
@@ -32,7 +30,7 @@ export class ConnectionManager extends EventEmitter {
   readonly navigationTimingManager = new NavigationTimingManager();
 
   private _metroPort: number;
-  private reconnectTimer: ReturnType<typeof setInterval> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private startTime = Date.now();
   private _sdkConnected = false;
 
@@ -117,40 +115,56 @@ export class ConnectionManager extends EventEmitter {
     });
   }
 
+  private reconnectDelay = 1000;
+  private static readonly MIN_RECONNECT_DELAY = 1000;
+  private static readonly MAX_RECONNECT_DELAY = 30000;
+
   private startReconnectPolling(): void {
     if (this.reconnectTimer) return;
 
-    let attempts = 0;
-    logger.info('Starting reconnection polling...');
+    this.reconnectDelay = ConnectionManager.MIN_RECONNECT_DELAY;
+    logger.info('Starting reconnection with exponential backoff...');
+    this.scheduleReconnect();
+  }
 
-    this.reconnectTimer = setInterval(async () => {
-      attempts++;
-      if (attempts > MAX_RECONNECT_ATTEMPTS) {
-        logger.warn('Max reconnect attempts reached. Stopping polling.');
-        this.stopReconnectPolling();
-        return;
-      }
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer) return;
+
+    this.reconnectTimer = setTimeout(async () => {
+      this.reconnectTimer = null;
 
       try {
         const targets = await discoverTargets(this.metroPort);
         const target = findHermesTarget(targets);
         if (target) {
-          this.stopReconnectPolling();
           logger.info('Target found, reconnecting...');
           await this.cdp.connect(target.webSocketDebuggerUrl, this.metroPort);
           await this.cdp.send('Runtime.enable');
           await this.networkManager.injectInterceptor(this.cdp);
           this.networkManager.startPolling(this.cdp);
+          // Reset delay on successful reconnect
+          this.reconnectDelay = ConnectionManager.MIN_RECONNECT_DELAY;
+          // Invalidate source map cache on reconnect (bundle may have changed)
+          this.sourcemapManager.invalidate();
+          return;
         }
       } catch {
-        // Will retry on next interval
+        // Will retry
       }
-    }, RECONNECT_INTERVAL_MS);
+
+      // Exponential backoff: double delay up to max
+      this.reconnectDelay = Math.min(
+        this.reconnectDelay * 2,
+        ConnectionManager.MAX_RECONNECT_DELAY,
+      );
+      logger.debug(`CDP reconnect retry in ${this.reconnectDelay}ms`);
+      this.scheduleReconnect();
+    }, this.reconnectDelay);
   }
 
   private stopReconnectPolling(): void {
     if (this.reconnectTimer) {
-      clearInterval(this.reconnectTimer);
+      clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
   }
