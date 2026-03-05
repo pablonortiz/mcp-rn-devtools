@@ -80,9 +80,12 @@ export class ConnectionManager extends EventEmitter {
       logger.info(`Connecting to: ${target.title} (${target.id})`);
       await this.cdp.connect(target.webSocketDebuggerUrl, this.metroPort);
 
+      // Enable Debugger to transition Hermes from RunningDetached → Running.
+      // Without this, Runtime.evaluate, HeapProfiler, and console events don't work.
+      await this.cdp.send('Debugger.enable');
       // Enable Runtime to get console messages (triggers replay of buffered messages)
       await this.cdp.send('Runtime.enable');
-      logger.info('Runtime.enable sent — listening for console events');
+      logger.info('Debugger + Runtime enabled — Hermes in Running state');
 
       // Inject network interceptor
       await this.networkManager.injectInterceptor(this.cdp);
@@ -139,6 +142,7 @@ export class ConnectionManager extends EventEmitter {
         if (target) {
           logger.info('Target found, reconnecting...');
           await this.cdp.connect(target.webSocketDebuggerUrl, this.metroPort);
+          await this.cdp.send('Debugger.enable');
           await this.cdp.send('Runtime.enable');
           await this.networkManager.injectInterceptor(this.cdp);
           this.networkManager.startPolling(this.cdp);

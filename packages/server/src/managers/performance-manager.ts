@@ -4,32 +4,10 @@ import { logger } from '../utils/logger.js';
 
 export class PerformanceManager {
   private profiling = false;
-  private debuggerRefCount = 0;
 
-  /**
-   * Hermes CDP requires the debugger to be in "paused" or "running" state
-   * for HeapProfiler commands. By default it's "RunningDetached".
-   * Calling Debugger.enable transitions to "Running".
-   * We ref-count so nested calls don't prematurely disable.
-   */
-  private async ensureDebuggerAttached(cdp: CDPConnection): Promise<void> {
-    if (this.debuggerRefCount === 0) {
-      await cdp.send('Debugger.enable');
-    }
-    this.debuggerRefCount++;
-  }
-
-  private async releaseDebugger(cdp: CDPConnection): Promise<void> {
-    this.debuggerRefCount--;
-    if (this.debuggerRefCount <= 0) {
-      this.debuggerRefCount = 0;
-      try {
-        await cdp.send('Debugger.disable');
-      } catch {
-        // may already be detached
-      }
-    }
-  }
+  // Note: Debugger.enable is called globally by ConnectionManager at connect time.
+  // Hermes transitions from RunningDetached → Running, enabling HeapProfiler,
+  // Runtime.evaluate, and console events. No per-operation enable/disable needed.
 
   async getHeapUsage(cdp: CDPConnection): Promise<HeapUsage> {
     const response = await cdp.send('Runtime.getHeapUsage');
@@ -50,7 +28,6 @@ export class PerformanceManager {
 
     cdp.on('HeapProfiler.addHeapSnapshotChunk', chunkHandler);
 
-    await this.ensureDebuggerAttached(cdp);
     try {
       await cdp.send('HeapProfiler.takeHeapSnapshot', { reportProgress: false });
 
@@ -58,7 +35,6 @@ export class PerformanceManager {
       return this.summarizeSnapshot(raw);
     } finally {
       cdp.removeListener('HeapProfiler.addHeapSnapshotChunk', chunkHandler);
-      await this.releaseDebugger(cdp);
     }
   }
 
@@ -93,14 +69,11 @@ export class PerformanceManager {
     // Falls back to Runtime.evaluate gc() for Hermes environments
     // where even Debugger.enable doesn't help.
     let gcSucceeded = false;
-    await this.ensureDebuggerAttached(cdp);
     try {
       await cdp.send('HeapProfiler.collectGarbage');
       gcSucceeded = true;
     } catch (e) {
       logger.debug('HeapProfiler.collectGarbage failed, trying gc() fallback', (e as Error).message);
-    } finally {
-      await this.releaseDebugger(cdp);
     }
 
     if (!gcSucceeded) {

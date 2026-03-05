@@ -58,9 +58,8 @@ describe('PerformanceManager', () => {
       const result = await manager.forceGC(cdp as any);
       expect(result.before.usedSize).toBe(10000000);
       expect(result.after.usedSize).toBe(5000000);
-      expect(cdp.send).toHaveBeenCalledWith('Debugger.enable');
       expect(cdp.send).toHaveBeenCalledWith('HeapProfiler.collectGarbage');
-      expect(cdp.send).toHaveBeenCalledWith('Debugger.disable');
+      // Debugger.enable is now managed globally by ConnectionManager, not per-operation
     });
 
     it('should fall back to gc() when HeapProfiler.collectGarbage fails', async () => {
@@ -164,9 +163,7 @@ describe('PerformanceManager', () => {
       expect(summary.totalObjects).toBe(2);
       expect(summary.totalSize).toBe(300);
       expect(summary.topRetainers.length).toBeGreaterThan(0);
-      // Should attach/detach debugger for HeapProfiler
-      expect(cdp.send).toHaveBeenCalledWith('Debugger.enable');
-      expect(cdp.send).toHaveBeenCalledWith('Debugger.disable');
+      // Debugger.enable is now managed globally by ConnectionManager
     });
   });
 });
