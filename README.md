@@ -264,7 +264,7 @@ Both channels feed into shared managers (LogManager, ErrorManager, NetworkManage
 - **React Native:** 0.71+
 - **Engine:** Hermes (default since RN 0.70)
 - **Platforms:** iOS, Android
-- **Node.js:** 18+
+- **Node.js:** 20+
 - **MCP Hosts:** Claude Code, Claude Desktop, or any MCP-compatible client
 
 ## License
