@@ -67,7 +67,7 @@ export function installNetworkInterceptor(client: WSClient): () => void {
 
       const sendResponse = (xhr: TrackedXHR, error?: string) => {
         const endTime = Date.now();
-        let responseHeaders: Record<string, string> = {};
+        const responseHeaders: Record<string, string> = {};
         try {
           const headers = xhr.getAllResponseHeaders();
           if (headers) {

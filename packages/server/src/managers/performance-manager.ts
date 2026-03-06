@@ -106,7 +106,7 @@ export class PerformanceManager {
       }
 
       const fieldCount = nodeFields.length;
-      const typeIdx = nodeFields.indexOf('type');
+      const _typeIdx = nodeFields.indexOf('type');
       const nameIdx = nodeFields.indexOf('name');
       const selfSizeIdx = nodeFields.indexOf('self_size');
 

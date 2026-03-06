@@ -1,4 +1,4 @@
-import type { ConsoleLogEntry, LogLevel, StackFrame } from '@mcp-rn-devtools/shared';
+import type { ConsoleLogEntry, LogLevel } from '@mcp-rn-devtools/shared';
 import { LOG_BUFFER_SIZE } from '@mcp-rn-devtools/shared';
 
 export class LogManager {

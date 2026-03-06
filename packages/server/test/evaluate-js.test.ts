@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 // We test the tool registration indirectly by testing the formatting logic
 // and the CDP interaction pattern. The tool itself is a thin wrapper.

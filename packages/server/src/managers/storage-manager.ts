@@ -59,7 +59,7 @@ export class StorageManager {
   // CDP fallback for AsyncStorage keys
   async getKeysCDP(cdp: CDPConnection): Promise<string[] | null> {
     try {
-      const result = await cdp.send('Runtime.evaluate', {
+      await cdp.send('Runtime.evaluate', {
         expression: `(function() {
           try {
             var AsyncStorage = require('@react-native-async-storage/async-storage').default;
@@ -117,7 +117,7 @@ export class StorageManager {
   async getValueCDP(cdp: CDPConnection, key: string): Promise<string | null> {
     try {
       const safeKey = JSON.stringify(key);
-      const result = await cdp.send('Runtime.evaluate', {
+      await cdp.send('Runtime.evaluate', {
         expression: `(function() {
           try {
             var AsyncStorage = require('@react-native-async-storage/async-storage').default;

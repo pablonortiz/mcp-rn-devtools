@@ -1,4 +1,4 @@
-import type { ErrorEntry, StackFrame } from '@mcp-rn-devtools/shared';
+import type { ErrorEntry } from '@mcp-rn-devtools/shared';
 import { ERROR_BUFFER_SIZE } from '@mcp-rn-devtools/shared';
 
 export class ErrorManager {
