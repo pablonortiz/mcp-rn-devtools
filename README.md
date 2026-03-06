@@ -1,6 +1,6 @@
 # mcp-rn-devtools
 
-[![CI](https://img.shields.io/github/actions/workflow/status/pablonortiz/mcp-rn-devtools/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/pablonortiz/mcp-rn-devtools/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/pablonortiz/mcp-rn-devtools/ci.yml?branch=master&style=flat-square&label=CI)](https://github.com/pablonortiz/mcp-rn-devtools/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/mcp-rn-devtools?style=flat-square&color=CB3837)](https://www.npmjs.com/package/mcp-rn-devtools)
 [![npm version](https://img.shields.io/npm/v/mcp-rn-devtools-sdk?style=flat-square&color=CB3837&label=sdk)](https://www.npmjs.com/package/mcp-rn-devtools-sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
