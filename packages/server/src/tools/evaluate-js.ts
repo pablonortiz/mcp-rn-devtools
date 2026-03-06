@@ -40,7 +40,8 @@ export function registerEvaluateJS(server: McpServer, cm: ConnectionManager): vo
           timeout: 10000,
         });
 
-        const result = response.result as Record<string, unknown> | undefined;
+        const resp = response as Record<string, unknown>;
+        const result = resp.result as Record<string, unknown> | undefined;
 
         if (!result) {
           return {
@@ -49,7 +50,7 @@ export function registerEvaluateJS(server: McpServer, cm: ConnectionManager): vo
         }
 
         // Check for exception
-        const exceptionDetails = response.exceptionDetails as Record<string, unknown> | undefined;
+        const exceptionDetails = resp.exceptionDetails as Record<string, unknown> | undefined;
         if (exceptionDetails) {
           const exText = (exceptionDetails.text as string) ?? 'Unknown error';
           const exception = exceptionDetails.exception as Record<string, unknown> | undefined;

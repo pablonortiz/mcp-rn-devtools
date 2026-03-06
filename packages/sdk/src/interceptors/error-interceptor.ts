@@ -79,10 +79,12 @@ export function installErrorInterceptor(client: WSClient): () => void {
     client.send(msg);
   };
 
-  if (typeof globalThis !== 'undefined' && typeof globalThis.addEventListener === 'function') {
-    globalThis.addEventListener('unhandledrejection', onUnhandledRejection as EventListener);
+  // React Native polyfills tracking-rejection-handler on the global
+  const g = globalThis as any;
+  if (typeof g.addEventListener === 'function') {
+    g.addEventListener('unhandledrejection', onUnhandledRejection);
     cleanups.push(() => {
-      globalThis.removeEventListener('unhandledrejection', onUnhandledRejection as EventListener);
+      g.removeEventListener('unhandledrejection', onUnhandledRejection);
     });
   }
 

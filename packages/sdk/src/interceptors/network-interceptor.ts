@@ -15,7 +15,7 @@ interface TrackedXHR extends XMLHttpRequest {
 }
 
 export function installNetworkInterceptor(client: WSClient): () => void {
-  const XHR = globalThis.XMLHttpRequest;
+  const XHR = (globalThis as any).XMLHttpRequest as typeof XMLHttpRequest | undefined;
   if (!XHR) return () => {};
 
   const origOpen = XHR.prototype.open;
