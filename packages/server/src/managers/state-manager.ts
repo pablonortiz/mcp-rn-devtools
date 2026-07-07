@@ -1,54 +1,87 @@
 import type { StateSnapshot } from '@mcp-rn-devtools/shared';
 import { STATE_BUFFER_SIZE } from '@mcp-rn-devtools/shared';
+import { pruneValue } from '../utils/prune.js';
 
 export class StateManager {
   private latest = new Map<string, StateSnapshot>();
   private history: StateSnapshot[] = [];
+  private snapshotResolvers = new Map<string, (snapshot: StateSnapshot) => void>();
+  private diffBaselines = new Map<string, StateSnapshot>();
 
-  addSnapshot(snapshot: StateSnapshot): void {
+  addSnapshot(snapshot: StateSnapshot, requestId?: string): void {
     this.latest.set(snapshot.name, snapshot);
     this.history.push(snapshot);
     if (this.history.length > STATE_BUFFER_SIZE) {
       this.history.shift();
     }
+
+    if (requestId) {
+      const resolver = this.snapshotResolvers.get(requestId);
+      if (resolver) {
+        this.snapshotResolvers.delete(requestId);
+        resolver(snapshot);
+      }
+    }
   }
 
-  getState(name?: string, path?: string): {
+  /** Resolves when a snapshot tagged with this requestId arrives (null on timeout). */
+  waitForSnapshot(requestId: string, timeoutMs: number = 3000): Promise<StateSnapshot | null> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.snapshotResolvers.delete(requestId);
+        resolve(null);
+      }, timeoutMs);
+
+      this.snapshotResolvers.set(requestId, (snapshot) => {
+        clearTimeout(timer);
+        resolve(snapshot);
+      });
+    });
+  }
+
+  getState(name?: string, path?: string, depth: number = 4): {
     found: boolean;
     stores: string[];
     data: unknown;
-    truncated: boolean;
   } {
+    const stores = Array.from(this.latest.keys());
+
     if (name) {
       const snapshot = this.latest.get(name);
       if (!snapshot) {
-        return {
-          found: false,
-          stores: Array.from(this.latest.keys()),
-          data: null,
-          truncated: false,
-        };
+        return { found: false, stores, data: null };
       }
-
       const data = path ? this.resolvePath(snapshot.state, path) : snapshot.state;
-      return this.formatResult(data);
+      return { found: true, stores, data: pruneValue(data, depth) };
     }
 
-    // Return all stores
+    if (stores.length === 0) {
+      return { found: false, stores, data: null };
+    }
+
     const allStates: Record<string, unknown> = {};
     for (const [storeName, snapshot] of this.latest) {
       allStates[storeName] = snapshot.state;
     }
-    return this.formatResult(allStates);
+    return { found: true, stores, data: pruneValue(allStates, depth) };
   }
 
   getStoreNames(): string[] {
     return Array.from(this.latest.keys());
   }
 
+  setDiffBaseline(name: string, state: unknown): void {
+    this.diffBaselines.set(name, { name, state, timestamp: Date.now() });
+  }
+
+  getDiffBaseline(name: string): StateSnapshot | undefined {
+    return this.diffBaselines.get(name);
+  }
+
   clear(): void {
     this.latest.clear();
     this.history = [];
+    this.diffBaselines.clear();
   }
 
   private resolvePath(obj: unknown, path: string): unknown {
@@ -62,34 +95,5 @@ export class StateManager {
     }
 
     return current;
-  }
-
-  private formatResult(data: unknown): {
-    found: boolean;
-    stores: string[];
-    data: unknown;
-    truncated: boolean;
-  } {
-    const MAX_SIZE = 50 * 1024; // 50KB
-    let serialized: string;
-    let truncated = false;
-
-    try {
-      serialized = JSON.stringify(data, null, 2);
-      if (serialized.length > MAX_SIZE) {
-        // Truncate and re-serialize at top level
-        serialized = serialized.substring(0, MAX_SIZE);
-        truncated = true;
-      }
-    } catch {
-      serialized = String(data);
-    }
-
-    return {
-      found: true,
-      stores: Array.from(this.latest.keys()),
-      data: truncated ? serialized : data,
-      truncated,
-    };
   }
 }

@@ -13,6 +13,7 @@ export function registerGetCPUProfile(server: McpServer, cm: ConnectionManager):
         .default(5000)
         .describe('Profiling duration in milliseconds (default 5000, max 30000)'),
     },
+    { readOnlyHint: true },
     async ({ duration }) => {
       if (!cm.connected) {
         return {

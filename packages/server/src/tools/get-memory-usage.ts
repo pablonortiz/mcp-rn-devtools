@@ -6,6 +6,7 @@ export function registerGetMemoryUsage(server: McpServer, cm: ConnectionManager)
     'get_memory_usage',
     'Get current JavaScript heap memory usage from the React Native app.',
     {},
+    { readOnlyHint: true },
     async () => {
       if (!cm.connected) {
         return {

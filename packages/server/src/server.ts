@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ConnectionManager } from './managers/connection-manager.js';
 import { SDKBridgeServer } from './sdk-bridge/sdk-server.js';
 import { registerAllTools } from './tools/index.js';
+import { SERVER_VERSION } from './utils/version.js';
 import { logger } from './utils/logger.js';
 
 export interface ServerOptions {
@@ -13,7 +14,7 @@ export function createServer(options: ServerOptions = {}) {
   const mcpServer = new McpServer(
     {
       name: 'mcp-rn-devtools',
-      version: '0.1.0',
+      version: SERVER_VERSION,
     },
     {
       capabilities: {

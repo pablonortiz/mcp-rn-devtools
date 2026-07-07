@@ -109,6 +109,7 @@ export class ErrorManager {
   }
 
   private pushError(entry: ErrorEntry): void {
+    entry.receivedAt = Date.now();
     this.errors.push(entry);
     if (this.errors.length > ERROR_BUFFER_SIZE) {
       this.errors.shift();
@@ -116,6 +117,7 @@ export class ErrorManager {
   }
 
   private pushWarning(entry: ErrorEntry): void {
+    entry.receivedAt = Date.now();
     this.warnings.push(entry);
     if (this.warnings.length > ERROR_BUFFER_SIZE) {
       this.warnings.shift();

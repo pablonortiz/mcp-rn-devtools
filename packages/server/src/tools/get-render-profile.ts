@@ -14,6 +14,7 @@ export function registerGetRenderProfile(server: McpServer, cm: ConnectionManage
       since: z.number().optional().describe('Only return entries after this timestamp (ms)'),
       summary: z.boolean().optional().default(false).describe('Return per-component aggregate summary'),
     },
+    { readOnlyHint: true },
     async ({ component, slow_only, threshold, limit, since, summary }) => {
       if (!cm.sdkConnected) {
         return {

@@ -1,9 +1,12 @@
 import type { StorageBackend, StorageEntry } from '@mcp-rn-devtools/shared';
-import type { CDPConnection } from '../cdp/connection.js';
-import { logger } from '../utils/logger.js';
 
 type Resolver<T> = (value: T) => void;
 
+/**
+ * Correlates SDK storage responses with pending requests.
+ * The zero-config AsyncStorage path lives in AgentBridge (native module proxy);
+ * this manager only handles the SDK channel.
+ */
 export class StorageManager {
   private keyResolvers = new Map<string, Resolver<string[]>>();
   private valueResolvers = new Map<string, Resolver<StorageEntry>>();
@@ -54,120 +57,5 @@ export class StorageManager {
         resolve(entry);
       });
     });
-  }
-
-  // CDP fallback for AsyncStorage keys
-  async getKeysCDP(cdp: CDPConnection): Promise<string[] | null> {
-    try {
-      await cdp.send('Runtime.evaluate', {
-        expression: `(function() {
-          try {
-            var AsyncStorage = require('@react-native-async-storage/async-storage').default;
-            var result = { done: false, value: null, error: null };
-            AsyncStorage.getAllKeys().then(function(keys) {
-              result.done = true;
-              result.value = keys;
-            }).catch(function(e) {
-              result.done = true;
-              result.error = e.message;
-            });
-            global.__RN_DEVTOOLS_STORAGE_KEYS__ = result;
-            return 'pending';
-          } catch(e) {
-            return JSON.stringify({ error: e.message });
-          }
-        })()`,
-        returnByValue: true,
-      });
-
-      // Poll for result
-      for (let i = 0; i < 10; i++) {
-        await new Promise((r) => setTimeout(r, 200));
-        const poll = await cdp.send('Runtime.evaluate', {
-          expression: `(function() {
-            var r = global.__RN_DEVTOOLS_STORAGE_KEYS__;
-            if (!r || !r.done) return JSON.stringify({ pending: true });
-            delete global.__RN_DEVTOOLS_STORAGE_KEYS__;
-            if (r.error) return JSON.stringify({ error: r.error });
-            return JSON.stringify({ keys: r.value });
-          })()`,
-          returnByValue: true,
-        });
-
-        const value = poll.result?.value as string | undefined;
-        if (!value) continue;
-
-        const parsed = JSON.parse(value);
-        if (parsed.pending) continue;
-        if (parsed.error) {
-          logger.warn('CDP AsyncStorage.getAllKeys failed:', parsed.error);
-          return null;
-        }
-        return parsed.keys as string[];
-      }
-
-      return null;
-    } catch (e) {
-      logger.debug('CDP storage keys fallback failed', e);
-      return null;
-    }
-  }
-
-  // CDP fallback for AsyncStorage value
-  async getValueCDP(cdp: CDPConnection, key: string): Promise<string | null> {
-    try {
-      const safeKey = JSON.stringify(key);
-      await cdp.send('Runtime.evaluate', {
-        expression: `(function() {
-          try {
-            var AsyncStorage = require('@react-native-async-storage/async-storage').default;
-            var result = { done: false, value: null, error: null };
-            AsyncStorage.getItem(${safeKey}).then(function(val) {
-              result.done = true;
-              result.value = val;
-            }).catch(function(e) {
-              result.done = true;
-              result.error = e.message;
-            });
-            global.__RN_DEVTOOLS_STORAGE_VALUE__ = result;
-            return 'pending';
-          } catch(e) {
-            return JSON.stringify({ error: e.message });
-          }
-        })()`,
-        returnByValue: true,
-      });
-
-      // Poll for result
-      for (let i = 0; i < 10; i++) {
-        await new Promise((r) => setTimeout(r, 200));
-        const poll = await cdp.send('Runtime.evaluate', {
-          expression: `(function() {
-            var r = global.__RN_DEVTOOLS_STORAGE_VALUE__;
-            if (!r || !r.done) return JSON.stringify({ pending: true });
-            delete global.__RN_DEVTOOLS_STORAGE_VALUE__;
-            if (r.error) return JSON.stringify({ error: r.error });
-            return JSON.stringify({ value: r.value });
-          })()`,
-          returnByValue: true,
-        });
-
-        const value = poll.result?.value as string | undefined;
-        if (!value) continue;
-
-        const parsed = JSON.parse(value);
-        if (parsed.pending) continue;
-        if (parsed.error) {
-          logger.warn('CDP AsyncStorage.getItem failed:', parsed.error);
-          return null;
-        }
-        return parsed.value as string | null;
-      }
-
-      return null;
-    } catch (e) {
-      logger.debug('CDP storage value fallback failed', e);
-      return null;
-    }
   }
 }

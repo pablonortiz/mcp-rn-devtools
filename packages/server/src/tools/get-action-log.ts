@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
+import { redact } from '../utils/redact.js';
 
 export function registerGetActionLog(server: McpServer, cm: ConnectionManager): void {
   server.tool(
     'get_action_log',
-    'Get Redux action dispatch log. Shows action types, reducer duration, and which state slices changed. Requires mcp-rn-devtools-sdk with createDevtoolsMiddleware.',
+    'Get Redux action dispatch log. Shows action types, reducer duration, and which state slices changed. Zero-config: the runtime agent records dispatches automatically once a store is discovered.',
     {
       action_type: z.string().optional().describe('Filter by action type (partial match)'),
       store_name: z.string().optional().describe('Filter by store name'),
@@ -14,16 +15,25 @@ export function registerGetActionLog(server: McpServer, cm: ConnectionManager): 
       since: z.number().optional().describe('Only return entries after this timestamp (ms)'),
       summary: z.boolean().optional().default(false).describe('Return per-action-type aggregate summary'),
     },
+    { readOnlyHint: true },
     async ({ action_type, store_name, search, limit, since, summary }) => {
-      if (!cm.sdkConnected) {
+      if (!cm.sdkConnected && !cm.connected) {
         return {
           content: [
             {
               type: 'text',
-              text: 'SDK not connected. Redux action logging requires mcp-rn-devtools-sdk with createDevtoolsMiddleware added to your Redux store.',
+              text: 'Not connected to a React Native app. Make sure Metro is running and the app is active.',
             },
           ],
         };
+      }
+
+      // Pull actions recorded by the runtime agent into the shared buffer
+      if (cm.connected) {
+        const drained = await cm.agentBridge.drainActions(cm.cdp).catch(() => []);
+        for (const entry of drained) {
+          cm.actionManager.add({ ...entry, payload: redact(entry.payload) });
+        }
       }
 
       if (summary) {
@@ -56,7 +66,7 @@ export function registerGetActionLog(server: McpServer, cm: ConnectionManager): 
 
       if (actions.length === 0) {
         return {
-          content: [{ type: 'text', text: 'No actions found matching the criteria.' }],
+          content: [{ type: 'text', text: 'No actions found matching the criteria. Interact with the app (or dispatch something) and try again.' }],
         };
       }
 

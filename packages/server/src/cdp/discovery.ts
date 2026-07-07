@@ -14,9 +14,10 @@ export interface CDPTarget {
   };
 }
 
-export async function discoverTargets(
+/** Distinguishes "Metro is down" from "Metro is up but no app registered an inspector". */
+export async function probeMetro(
   metroPort: number = DEFAULT_METRO_PORT,
-): Promise<CDPTarget[]> {
+): Promise<{ reachable: boolean; targets: CDPTarget[] }> {
   const hosts = ['localhost', '127.0.0.1', '[::1]'];
 
   for (const host of hosts) {
@@ -28,25 +29,37 @@ export async function discoverTargets(
       if (!response.ok) continue;
       const targets: CDPTarget[] = await response.json();
       logger.debug(`Found ${targets.length} targets from ${url}`);
-      return targets;
+      return { reachable: true, targets };
     } catch {
       logger.debug(`Failed to connect to ${url}`);
     }
   }
 
-  return [];
+  return { reachable: false, targets: [] };
 }
 
-export function findHermesTarget(targets: CDPTarget[]): CDPTarget | null {
-  const hermesTargets = targets.filter((t) => t.vm === 'Hermes');
+export async function discoverTargets(
+  metroPort: number = DEFAULT_METRO_PORT,
+): Promise<CDPTarget[]> {
+  return (await probeMetro(metroPort)).targets;
+}
 
-  if (hermesTargets.length === 0) return null;
+export function findReactNativeTarget(targets: CDPTarget[]): CDPTarget | null {
+  // RN 0.76+ (Fusebox) no longer sets vm: 'Hermes' — the main runtime is identified
+  // by reactNative.capabilities.prefersFuseboxFrontend. Secondary runtimes registered
+  // by libraries (e.g. "Reanimated UI runtime") must be excluded.
+  const candidates = targets.filter(
+    (t) => (t.vm === 'Hermes' || t.reactNative) && !/reanimated/i.test(t.description ?? ''),
+  );
+  if (candidates.length === 0) return null;
 
-  // Prefer targets with reactNative capabilities (RN 0.76+)
-  const modern = hermesTargets.find((t) => t.reactNative?.capabilities);
+  const fusebox = candidates.find((t) => t.reactNative?.capabilities?.prefersFuseboxFrontend);
+  if (fusebox) return fusebox;
+
+  const modern = candidates.find((t) => t.reactNative?.capabilities);
   if (modern) return modern;
 
-  // Skip synthetic pages (ID ending in -1)
-  const real = hermesTargets.find((t) => !t.id.endsWith('-1'));
-  return real ?? hermesTargets[0];
+  // Legacy targets (vm: 'Hermes'): skip synthetic pages (ID ending in -1)
+  const real = candidates.find((t) => !t.id.endsWith('-1'));
+  return real ?? candidates[0];
 }

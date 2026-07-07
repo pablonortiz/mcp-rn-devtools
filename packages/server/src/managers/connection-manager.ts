@@ -3,7 +3,8 @@ import {
   DEFAULT_METRO_PORT,
 } from '@mcp-rn-devtools/shared';
 import { CDPConnection } from '../cdp/connection.js';
-import { discoverTargets, findHermesTarget } from '../cdp/discovery.js';
+import { discoverTargets, findReactNativeTarget, type CDPTarget } from '../cdp/discovery.js';
+import { AgentBridge } from '../cdp/agent-bridge.js';
 import { LogManager } from './log-manager.js';
 import { ErrorManager } from './error-manager.js';
 import { NetworkManager } from './network-manager.js';
@@ -18,6 +19,7 @@ import { logger } from '../utils/logger.js';
 
 export class ConnectionManager extends EventEmitter {
   readonly cdp = new CDPConnection();
+  readonly agentBridge = new AgentBridge();
   readonly logManager = new LogManager();
   readonly errorManager = new ErrorManager();
   readonly networkManager = new NetworkManager();
@@ -33,6 +35,8 @@ export class ConnectionManager extends EventEmitter {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private startTime = Date.now();
   private _sdkConnected = false;
+  private preferredTargetId: string | null = null;
+  private _currentTarget: CDPTarget | null = null;
 
   constructor(metroPort: number = DEFAULT_METRO_PORT) {
     super();
@@ -62,14 +66,17 @@ export class ConnectionManager extends EventEmitter {
     return Date.now() - this.startTime;
   }
 
+  get currentTarget(): CDPTarget | null {
+    return this._currentTarget;
+  }
+
   async connect(): Promise<void> {
     try {
-      const targets = await discoverTargets(this.metroPort);
-      const target = findHermesTarget(targets);
+      const target = await this.pickTarget();
 
       if (!target) {
         logger.warn(
-          'No Hermes target found. Is a React Native app running with Metro on port ' +
+          'No React Native target found. Is a React Native app running with Metro on port ' +
             this.metroPort +
             '?',
         );
@@ -77,23 +84,54 @@ export class ConnectionManager extends EventEmitter {
         return;
       }
 
-      logger.info(`Connecting to: ${target.title} (${target.id})`);
-      await this.cdp.connect(target.webSocketDebuggerUrl, this.metroPort);
-
-      // Enable Debugger to transition Hermes from RunningDetached → Running.
-      // Without this, Runtime.evaluate, HeapProfiler, and console events don't work.
-      await this.cdp.send('Debugger.enable');
-      // Enable Runtime to get console messages (triggers replay of buffered messages)
-      await this.cdp.send('Runtime.enable');
-      logger.info('Debugger + Runtime enabled — Hermes in Running state');
-
-      // Inject network interceptor
-      await this.networkManager.injectInterceptor(this.cdp);
-      this.networkManager.startPolling(this.cdp);
+      await this.establishConnection(target);
     } catch (e) {
       logger.warn('Failed to connect to RN app, will retry...', (e as Error).message);
       this.startReconnectPolling();
     }
+  }
+
+  /** Connects to a specific target by ID and pins it for future reconnects. */
+  async connectToTarget(targetId: string): Promise<CDPTarget> {
+    const targets = await discoverTargets(this.metroPort);
+    const target = targets.find((t) => t.id === targetId);
+    if (!target) {
+      const available = targets.map((t) => `${t.id} (${t.title})`).join(', ') || 'none';
+      throw new Error(`Target "${targetId}" not found. Available: ${available}`);
+    }
+
+    this.preferredTargetId = targetId;
+    this.stopReconnectPolling();
+    this.cdp.disconnect();
+    await this.establishConnection(target);
+    return target;
+  }
+
+  private async pickTarget(): Promise<CDPTarget | null> {
+    const targets = await discoverTargets(this.metroPort);
+    if (this.preferredTargetId) {
+      const pinned = targets.find((t) => t.id === this.preferredTargetId);
+      if (pinned) return pinned;
+      logger.warn(`Pinned target ${this.preferredTargetId} gone, falling back to auto-select`);
+    }
+    return findReactNativeTarget(targets);
+  }
+
+  private async establishConnection(target: CDPTarget): Promise<void> {
+    logger.info(`Connecting to: ${target.title} (${target.id})`);
+    await this.cdp.connect(target.webSocketDebuggerUrl, this.metroPort);
+    this._currentTarget = target;
+
+    // Enable Debugger to transition Hermes from RunningDetached → Running.
+    // Without this, Runtime.evaluate, HeapProfiler, and console events don't work.
+    await this.cdp.send('Debugger.enable');
+    // Enable Runtime to get console messages (triggers replay of buffered messages)
+    await this.cdp.send('Runtime.enable');
+    logger.info('Debugger + Runtime enabled — Hermes in Running state');
+
+    await this.networkManager.injectInterceptor(this.cdp);
+    this.networkManager.startPolling(this.cdp);
+    await this.agentBridge.inject(this.cdp);
   }
 
   private setupCDPListeners(): void {
@@ -113,6 +151,7 @@ export class ConnectionManager extends EventEmitter {
     });
 
     this.cdp.on('disconnected', () => {
+      this._currentTarget = null;
       this.networkManager.stopPolling();
       this.startReconnectPolling();
     });
@@ -137,15 +176,10 @@ export class ConnectionManager extends EventEmitter {
       this.reconnectTimer = null;
 
       try {
-        const targets = await discoverTargets(this.metroPort);
-        const target = findHermesTarget(targets);
+        const target = await this.pickTarget();
         if (target) {
           logger.info('Target found, reconnecting...');
-          await this.cdp.connect(target.webSocketDebuggerUrl, this.metroPort);
-          await this.cdp.send('Debugger.enable');
-          await this.cdp.send('Runtime.enable');
-          await this.networkManager.injectInterceptor(this.cdp);
-          this.networkManager.startPolling(this.cdp);
+          await this.establishConnection(target);
           // Reset delay on successful reconnect
           this.reconnectDelay = ConnectionManager.MIN_RECONNECT_DELAY;
           // Invalidate source map cache on reconnect (bundle may have changed)

@@ -76,6 +76,7 @@ export class LogManager {
   }
 
   private push(entry: ConsoleLogEntry): void {
+    entry.receivedAt = Date.now();
     this.buffer.push(entry);
     if (this.buffer.length > LOG_BUFFER_SIZE) {
       this.buffer.shift();

@@ -10,6 +10,7 @@ export function registerResolveSourceLocation(server: McpServer, cm: ConnectionM
       line: z.number().describe('Line number in the bundle (e.g. 69306)'),
       column: z.number().optional().default(0).describe('Column number in the bundle (default 0)'),
     },
+    { readOnlyHint: true },
     async ({ line, column }) => {
       const location = await cm.sourcemapManager.resolve(line, column);
 

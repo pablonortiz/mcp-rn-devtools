@@ -1,6 +1,6 @@
 {
   "name": "mcp-rn-devtools-sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "React Native SDK for mcp-rn-devtools — adds network interception, navigation state, and more to your running app",
   "type": "module",
   "main": "./dist/index.cjs",

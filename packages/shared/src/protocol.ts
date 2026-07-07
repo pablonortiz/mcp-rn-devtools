@@ -80,6 +80,8 @@ export interface StateSnapshotMessage extends SDKMessage {
   type: 'state:snapshot';
   payload: {
     snapshot: StateSnapshot;
+    /** Correlates with the request:state that triggered this snapshot (pull-based flow). */
+    requestId?: string;
   };
 }
 
@@ -133,6 +135,7 @@ export interface RequestStateMessage extends SDKMessage {
   type: 'request:state';
   payload: {
     name?: string;
+    requestId?: string;
   };
 }
 

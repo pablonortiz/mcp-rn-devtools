@@ -21,7 +21,7 @@ export class CDPConnection extends EventEmitter {
   private requestId = 0;
   private pending = new Map<
     number,
-    { resolve: (v: CDPResponse) => void; reject: (e: Error) => void }
+    { resolve: (v: Record<string, unknown>) => void; reject: (e: Error) => void }
   >();
   private _connected = false;
 
@@ -60,7 +60,8 @@ export class CDPConnection extends EventEmitter {
             if (msg.error) {
               p.reject(new Error(msg.error.message));
             } else {
-              p.resolve(msg);
+              // Resolve with the command result, not the JSON-RPC envelope
+              p.resolve(msg.result ?? {});
             }
           } else if (msg.method) {
             this.emit('event', msg);
@@ -89,7 +90,7 @@ export class CDPConnection extends EventEmitter {
     });
   }
 
-  async send(method: string, params?: Record<string, unknown>): Promise<CDPResponse> {
+  async send(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>> {
     if (!this.ws || !this._connected) {
       throw new Error('CDP not connected');
     }

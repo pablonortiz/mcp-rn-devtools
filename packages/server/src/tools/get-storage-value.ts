@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 import type { SDKBridgeServer } from '../sdk-bridge/sdk-server.js';
+import { redactStorageValue } from '../utils/redact.js';
 
 export function registerGetStorageValue(
   server: McpServer,
@@ -10,7 +11,7 @@ export function registerGetStorageValue(
 ): void {
   server.tool(
     'get_storage_value',
-    'Read a value from AsyncStorage or MMKV by key. Works via SDK (preferred) or CDP fallback for AsyncStorage.',
+    'Read a value from AsyncStorage or MMKV by key. AsyncStorage works zero-config via the runtime agent; MMKV requires the SDK. Secrets are redacted (opt out with MCP_RN_NO_REDACT=1).',
     {
       key: z.string().describe('The storage key to read'),
       backend: z
@@ -19,6 +20,7 @@ export function registerGetStorageValue(
         .default('async-storage')
         .describe('Storage backend to query'),
     },
+    { readOnlyHint: true },
     async ({ key, backend }) => {
       let value: string | null | undefined = undefined;
 
@@ -27,15 +29,18 @@ export function registerGetStorageValue(
         if (entry) value = entry.value;
       }
 
-      // CDP fallback for AsyncStorage
+      // Zero-config agent fallback (AsyncStorage via native module proxy)
       if (value === undefined && backend === 'async-storage' && cm.connected) {
-        value = await cm.storageManager.getValueCDP(cm.cdp, key);
+        const result = await cm.agentBridge.storageOp(cm.cdp, 'get', key);
+        if (result.ok !== undefined && result.error === null) {
+          value = (result.value as string | null) ?? null;
+        }
       }
 
       if (value === undefined) {
         const hint = backend === 'mmkv'
           ? 'MMKV requires SDK connection. Install mcp-rn-devtools-sdk and pass mmkv prop to <RNDevtoolsProvider>.'
-          : 'Not connected. Ensure Metro is running or install mcp-rn-devtools-sdk with asyncStorage prop.';
+          : 'Not connected. Make sure Metro is running and the app is active.';
 
         return {
           content: [{ type: 'text', text: `Could not read storage value. ${hint}` }],
@@ -50,13 +55,12 @@ export function registerGetStorageValue(
         };
       }
 
-      // Try to pretty-print JSON values
-      let formatted = value;
+      let formatted = redactStorageValue(key, value) ?? '';
       try {
-        const parsed = JSON.parse(value);
+        const parsed = JSON.parse(formatted);
         formatted = JSON.stringify(parsed, null, 2);
       } catch {
-        // not JSON, use raw value
+        // not JSON, use as-is
       }
 
       return {

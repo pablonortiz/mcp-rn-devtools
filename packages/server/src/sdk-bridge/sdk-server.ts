@@ -14,6 +14,7 @@ import type {
 } from '@mcp-rn-devtools/shared';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 import { logger } from '../utils/logger.js';
+import { SERVER_VERSION } from '../utils/version.js';
 
 export class SDKBridgeServer {
   private wss: WebSocketServer | null = null;
@@ -66,7 +67,7 @@ export class SDKBridgeServer {
       // Send handshake ack
       this.sendToClient({
         type: 'handshake:ack',
-        payload: { serverVersion: '0.1.0' },
+        payload: { serverVersion: SERVER_VERSION },
         timestamp: Date.now(),
         id: `ack-${Date.now()}`,
       });
@@ -126,7 +127,10 @@ export class SDKBridgeServer {
 
       case 'state:snapshot': {
         const stateMsg = msg as StateSnapshotMessage;
-        this.connectionManager.stateManager.addSnapshot(stateMsg.payload.snapshot);
+        this.connectionManager.stateManager.addSnapshot(
+          stateMsg.payload.snapshot,
+          stateMsg.payload.requestId,
+        );
         break;
       }
 
@@ -188,13 +192,32 @@ export class SDKBridgeServer {
     });
   }
 
-  requestAppState(name?: string): void {
+  /**
+   * Requests a fresh state snapshot and waits for the SDK to answer it
+   * (requestId-correlated — no fixed sleep). Returns null on timeout.
+   * Without a store name, several stores may answer with the same requestId;
+   * the promise resolves on the first one and the rest land in StateManager.
+   */
+  async getAppState(name?: string, timeoutMs: number = 2000): Promise<unknown | null> {
+    if (!this.client) return null;
+
+    const requestId = `state-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this.sendToClient({
       type: 'request:state',
-      payload: { name },
+      payload: { name, requestId },
       timestamp: Date.now(),
-      id: `state-req-${Date.now()}`,
+      id: requestId,
     });
+
+    const snapshot = await this.connectionManager.stateManager.waitForSnapshot(
+      requestId,
+      timeoutMs,
+    );
+    if (snapshot && !name) {
+      // Give sibling stores a beat to land before the caller reads the full map
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return snapshot;
   }
 
   async getStorageKeys(backend: StorageBackend, timeoutMs: number = 3000): Promise<string[] | null> {

@@ -11,6 +11,8 @@ export interface StackFrame {
 export interface ConsoleLogEntry {
   id: string;
   timestamp: number;
+  /** Server-clock arrival time — device clocks can skew; use this for "newer than" cuts. */
+  receivedAt?: number;
   level: LogLevel;
   message: string;
   args: unknown[];
@@ -21,6 +23,8 @@ export interface ConsoleLogEntry {
 export interface ErrorEntry {
   id: string;
   timestamp: number;
+  /** Server-clock arrival time — device clocks can skew; use this for "newer than" cuts. */
+  receivedAt?: number;
   message: string;
   stack?: StackFrame[];
   isFatal: boolean;

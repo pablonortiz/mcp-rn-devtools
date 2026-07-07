@@ -20,37 +20,47 @@ import { registerEvaluateJS } from './evaluate-js.js';
 import { registerResolveSourceLocation } from './resolve-source-location.js';
 import { registerGetActionLog } from './get-action-log.js';
 import { registerGetNavigationTiming } from './get-navigation-timing.js';
+import { registerDispatchAction } from './dispatch-action.js';
+import { registerClearBuffers } from './clear-buffers.js';
+import { registerWaitForLog } from './wait-for-log.js';
+import { registerGetStateDiff } from './get-state-diff.js';
+import { registerTargetTools } from './targets.js';
 
 export function registerAllTools(
   server: McpServer,
   cm: ConnectionManager,
   sdkBridge: SDKBridgeServer,
 ): void {
+  // Logging & errors
   registerGetConsoleLogs(server, cm);
   registerGetErrors(server, cm);
   registerGetWarnings(server, cm);
+  registerWaitForLog(server, cm);
+  // Network
   registerGetNetworkRequests(server, cm);
   registerGetFailedRequests(server, cm);
+  // Diagnostics
   registerHealthCheck(server, cm);
+  registerTargetTools(server, cm);
+  registerClearBuffers(server, cm);
+  // Navigation
   registerGetNavigationState(server, cm, sdkBridge);
-  // Phase 5a: Memory/Performance
+  registerGetNavigationTiming(server, cm);
+  // Memory / performance
   registerGetMemoryUsage(server, cm);
   registerTakeHeapSnapshot(server, cm);
   registerGetCPUProfile(server, cm);
   registerForceGC(server, cm);
-  // Phase 5b: Render Tracking
   registerGetRenderProfile(server, cm);
-  // Phase 5c: State Inspection
+  // State
   registerGetAppState(server, cm, sdkBridge);
-  // Phase 5d: Storage
+  registerGetStateDiff(server, cm, sdkBridge);
+  registerGetActionLog(server, cm);
+  registerDispatchAction(server, cm);
+  // Storage
   registerGetStorageKeys(server, cm, sdkBridge);
   registerGetStorageValue(server, cm, sdkBridge);
-  // Runtime evaluation
+  // Runtime
   registerEvaluateJS(server, cm);
-  // Source map resolution
   registerResolveSourceLocation(server, cm);
-  // Redux action log
-  registerGetActionLog(server, cm);
-  // Navigation timing
-  registerGetNavigationTiming(server, cm);
 }

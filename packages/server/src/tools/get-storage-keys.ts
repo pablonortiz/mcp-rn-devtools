@@ -10,7 +10,7 @@ export function registerGetStorageKeys(
 ): void {
   server.tool(
     'get_storage_keys',
-    'List storage keys from AsyncStorage or MMKV. Works via SDK (preferred) or CDP fallback for AsyncStorage.',
+    'List storage keys from AsyncStorage or MMKV. AsyncStorage works zero-config via the runtime agent; MMKV requires the SDK.',
     {
       backend: z
         .enum(['async-storage', 'mmkv'])
@@ -20,6 +20,7 @@ export function registerGetStorageKeys(
       search: z.string().optional().describe('Filter keys containing this string'),
       limit: z.number().optional().default(100).describe('Max number of keys to return'),
     },
+    { readOnlyHint: true },
     async ({ backend, search, limit }) => {
       let keys: string[] | null = null;
 
@@ -27,15 +28,18 @@ export function registerGetStorageKeys(
         keys = await sdkBridge.getStorageKeys(backend);
       }
 
-      // CDP fallback for AsyncStorage
+      // Zero-config agent fallback (AsyncStorage via native module proxy)
       if (!keys && backend === 'async-storage' && cm.connected) {
-        keys = await cm.storageManager.getKeysCDP(cm.cdp);
+        const result = await cm.agentBridge.storageOp(cm.cdp, 'keys');
+        if (result.ok && Array.isArray(result.value)) {
+          keys = result.value as string[];
+        }
       }
 
       if (!keys) {
         const hint = backend === 'mmkv'
           ? 'MMKV requires SDK connection. Install mcp-rn-devtools-sdk and pass mmkv prop to <RNDevtoolsProvider>.'
-          : 'Not connected. Ensure Metro is running or install mcp-rn-devtools-sdk with asyncStorage prop.';
+          : 'Not connected. Make sure Metro is running and the app is active.';
 
         return {
           content: [{ type: 'text', text: `Could not retrieve storage keys. ${hint}` }],

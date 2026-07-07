@@ -2,6 +2,7 @@ import { SDK_WS_PORT } from '@mcp-rn-devtools/shared';
 import type { SDKMessage } from '@mcp-rn-devtools/shared';
 import { uuid } from '../utils/uuid.js';
 import { getDefaultHost } from '../utils/platform.js';
+import { SDK_VERSION } from '../version.js';
 
 type MessageHandler = (msg: SDKMessage) => void;
 
@@ -39,7 +40,7 @@ export class WSClient {
         this.send({
           type: 'handshake',
           payload: {
-            sdkVersion: '0.1.0',
+            sdkVersion: SDK_VERSION,
           },
           timestamp: Date.now(),
           id: uuid(),

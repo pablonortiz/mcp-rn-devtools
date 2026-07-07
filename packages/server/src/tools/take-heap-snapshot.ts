@@ -6,6 +6,7 @@ export function registerTakeHeapSnapshot(server: McpServer, cm: ConnectionManage
     'take_heap_snapshot',
     'Take a heap snapshot and return a summary with top memory retainers. This may take a few seconds.',
     {},
+    { readOnlyHint: true },
     async () => {
       if (!cm.connected) {
         return {

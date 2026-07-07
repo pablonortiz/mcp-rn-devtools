@@ -172,7 +172,7 @@ export class NetworkManager {
           expression: DRAIN_SCRIPT,
           returnByValue: true,
         });
-        const value = result.result?.value as string | undefined;
+        const value = (result.result as Record<string, unknown> | undefined)?.value as string | undefined;
         if (value) {
           const requests: NetworkRequest[] = JSON.parse(value);
           for (const req of requests) {

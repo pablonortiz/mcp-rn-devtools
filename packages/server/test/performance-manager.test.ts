@@ -22,9 +22,7 @@ describe('PerformanceManager', () => {
 
   describe('getHeapUsage', () => {
     it('should return heap usage from CDP', async () => {
-      cdp.send.mockResolvedValue({
-        result: { usedSize: 5242880, totalSize: 10485760 },
-      });
+      cdp.send.mockResolvedValue({ usedSize: 5242880, totalSize: 10485760 });
 
       const usage = await manager.getHeapUsage(cdp as any);
       expect(usage.usedSize).toBe(5242880);
@@ -33,7 +31,7 @@ describe('PerformanceManager', () => {
     });
 
     it('should handle missing result', async () => {
-      cdp.send.mockResolvedValue({ result: {} });
+      cdp.send.mockResolvedValue({});
 
       const usage = await manager.getHeapUsage(cdp as any);
       expect(usage.usedSize).toBe(0);
@@ -48,9 +46,9 @@ describe('PerformanceManager', () => {
         if (method === 'Runtime.getHeapUsage') {
           callCount++;
           if (callCount === 1) {
-            return { result: { usedSize: 10000000, totalSize: 20000000 } };
+            return { usedSize: 10000000, totalSize: 20000000 };
           }
-          return { result: { usedSize: 5000000, totalSize: 20000000 } };
+          return { usedSize: 5000000, totalSize: 20000000 };
         }
         return {};
       });
@@ -68,9 +66,9 @@ describe('PerformanceManager', () => {
         if (method === 'Runtime.getHeapUsage') {
           callCount++;
           if (callCount === 1) {
-            return { result: { usedSize: 8000000, totalSize: 20000000 } };
+            return { usedSize: 8000000, totalSize: 20000000 };
           }
-          return { result: { usedSize: 6000000, totalSize: 20000000 } };
+          return { usedSize: 6000000, totalSize: 20000000 };
         }
         if (method === 'HeapProfiler.collectGarbage') {
           throw new Error('RunningDetached, expected paused or running');
@@ -93,8 +91,7 @@ describe('PerformanceManager', () => {
       cdp.send.mockImplementation(async (method: string) => {
         if (method === 'Profiler.stop') {
           return {
-            result: {
-              profile: {
+            profile: {
                 nodes: [
                   {
                     id: 1,
@@ -108,8 +105,7 @@ describe('PerformanceManager', () => {
                   },
                 ],
                 samples: [1, 1, 1, 2, 2],
-                timeDeltas: [1000, 2000, 1500, 3000, 2500],
-              },
+              timeDeltas: [1000, 2000, 1500, 3000, 2500],
             },
           };
         }
@@ -125,7 +121,7 @@ describe('PerformanceManager', () => {
     it('should reject concurrent profiling', async () => {
       cdp.send.mockImplementation(async (method: string) => {
         if (method === 'Profiler.stop') {
-          return { result: { profile: { nodes: [], samples: [], timeDeltas: [] } } };
+          return { profile: { nodes: [], samples: [], timeDeltas: [] } };
         }
         return {};
       });

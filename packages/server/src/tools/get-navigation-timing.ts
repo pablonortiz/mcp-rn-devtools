@@ -13,6 +13,7 @@ export function registerGetNavigationTiming(server: McpServer, cm: ConnectionMan
       slow_threshold: z.number().optional().describe('Only show transitions slower than this (ms)'),
       summary: z.boolean().optional().default(false).describe('Return per-route aggregate summary'),
     },
+    { readOnlyHint: true },
     async ({ route, limit, since, slow_threshold, summary }) => {
       if (!cm.sdkConnected) {
         return {

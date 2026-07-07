@@ -10,6 +10,7 @@ export function registerGetFailedRequests(server: McpServer, cm: ConnectionManag
       limit: z.number().optional().default(50).describe('Max number of entries to return'),
       since: z.number().optional().describe('Only return entries after this timestamp (ms)'),
     },
+    { readOnlyHint: true },
     async ({ limit, since }) => {
       const requests = cm.networkManager.getFailedRequests({ limit, since });
 

@@ -12,6 +12,7 @@ export function registerGetConsoleLogs(server: McpServer, cm: ConnectionManager)
       limit: z.number().optional().default(50).describe('Max number of entries to return'),
       since: z.number().optional().describe('Only return entries after this timestamp (ms)'),
     },
+    { readOnlyHint: true },
     async ({ level, search, limit, since }) => {
       const logs = cm.logManager.getLogs({ level, search, limit, since });
 

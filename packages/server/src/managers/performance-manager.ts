@@ -11,10 +11,9 @@ export class PerformanceManager {
 
   async getHeapUsage(cdp: CDPConnection): Promise<HeapUsage> {
     const response = await cdp.send('Runtime.getHeapUsage');
-    const result = response.result as Record<string, unknown> | undefined;
     return {
-      usedSize: (result?.usedSize as number) ?? 0,
-      totalSize: (result?.totalSize as number) ?? 0,
+      usedSize: (response.usedSize as number) ?? 0,
+      totalSize: (response.totalSize as number) ?? 0,
     };
   }
 
@@ -53,7 +52,7 @@ export class PerformanceManager {
       const response = await cdp.send('Profiler.stop');
       await cdp.send('Profiler.disable');
 
-      const profile = (response.result as Record<string, unknown>)?.profile as Record<string, unknown> | undefined;
+      const profile = response.profile as Record<string, unknown> | undefined;
       if (!profile) return [];
 
       return this.extractHotFunctions(profile);

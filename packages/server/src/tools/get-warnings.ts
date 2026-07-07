@@ -11,6 +11,7 @@ export function registerGetWarnings(server: McpServer, cm: ConnectionManager): v
       since: z.number().optional().describe('Only return entries after this timestamp (ms)'),
       search: z.string().optional().describe('Search string to filter warning messages'),
     },
+    { readOnlyHint: true },
     async ({ limit, since, search }) => {
       const warnings = cm.errorManager.getWarnings({ limit, since, search });
 

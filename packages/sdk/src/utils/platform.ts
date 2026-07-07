@@ -1,14 +1,21 @@
-import { Platform } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 
 /**
- * Returns the default host for connecting back to the dev machine.
+ * Returns the host of the dev machine for connecting back to it.
  *
- * - iOS simulator / physical device via Metro: `localhost` works because
- *   Metro's proxy forwards traffic.
- * - Android emulator: `10.0.2.2` is the special alias for the host loopback
- *   interface inside the standard Android emulator.
+ * Primary source: the URL the device actually used to load the JS bundle
+ * (`SourceCode.scriptURL`). This covers every topology with one rule:
+ * iOS simulator (localhost), Android emulator (10.0.2.2), physical devices
+ * via LAN IP, and `adb reverse` (localhost).
+ *
+ * Fallback (embedded bundle → file:// scriptURL): platform defaults.
  */
 export function getDefaultHost(): string {
+  const scriptURL = (NativeModules as { SourceCode?: { scriptURL?: string } })
+    ?.SourceCode?.scriptURL;
+  const host = scriptURL?.match(/^https?:\/\/([^:/]+)/)?.[1];
+  if (host) return host;
+
   if (Platform.OS === 'android') {
     return '10.0.2.2';
   }
