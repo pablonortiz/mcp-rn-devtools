@@ -40,7 +40,7 @@ export function registerAllTools(
   registerGetNetworkRequests(server, cm);
   registerGetFailedRequests(server, cm);
   // Diagnostics
-  registerHealthCheck(server, cm);
+  registerHealthCheck(server, cm, sdkBridge);
   registerTargetTools(server, cm);
   registerClearBuffers(server, cm);
   // Navigation

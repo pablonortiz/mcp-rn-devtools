@@ -22,8 +22,14 @@ export class SDKBridgeServer {
   private lastNavigationState: NavigationState | null = null;
   private navigationResolvers: Array<(state: NavigationState | null) => void> = [];
   private pingInterval: ReturnType<typeof setInterval> | null = null;
+  private _portConflict = false;
 
   constructor(private connectionManager: ConnectionManager) {}
+
+  /** True when the SDK port was already taken — another server instance is running. */
+  get portConflict(): boolean {
+    return this._portConflict;
+  }
 
   start(port: number = SDK_WS_PORT): void {
     this.wss = new WebSocketServer({ port, host: '0.0.0.0' });
@@ -74,6 +80,13 @@ export class SDKBridgeServer {
     });
 
     this.wss.on('error', (err) => {
+      if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+        this._portConflict = true;
+        logger.error(
+          `SDK port ${port} already in use — another mcp-rn-devtools instance is running and will compete for the CDP session`,
+        );
+        return;
+      }
       logger.error('SDK bridge server error', err.message);
     });
   }

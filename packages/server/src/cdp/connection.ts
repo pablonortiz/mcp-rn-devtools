@@ -36,6 +36,11 @@ export class CDPConnection extends EventEmitter {
           Origin: `http://localhost:${metroPort}`,
         },
       });
+      this.ws = ws;
+
+      // Events from a replaced socket arrive async after disconnect()/reconnect;
+      // without this guard the old socket's `close` clobbers the live connection.
+      const isCurrent = () => this.ws === ws;
 
       const timeout = setTimeout(() => {
         ws.close();
@@ -43,8 +48,11 @@ export class CDPConnection extends EventEmitter {
       }, 5000);
 
       ws.on('open', () => {
+        if (!isCurrent()) {
+          ws.close();
+          return;
+        }
         clearTimeout(timeout);
-        this.ws = ws;
         this._connected = true;
         logger.info('CDP connected');
         this.emit('connected');
@@ -52,6 +60,7 @@ export class CDPConnection extends EventEmitter {
       });
 
       ws.on('message', (data) => {
+        if (!isCurrent()) return;
         try {
           const msg: CDPResponse = JSON.parse(data.toString());
           if (msg.id !== undefined && this.pending.has(msg.id)) {
@@ -74,6 +83,10 @@ export class CDPConnection extends EventEmitter {
 
       ws.on('close', () => {
         clearTimeout(timeout);
+        // No-op if already resolved; settles the promise on close-before-open
+        reject(new Error('CDP connection closed before it was established'));
+        if (!isCurrent()) return;
+        this.ws = null;
         this._connected = false;
         this.rejectAllPending();
         logger.info('CDP disconnected');
@@ -83,9 +96,8 @@ export class CDPConnection extends EventEmitter {
       ws.on('error', (err) => {
         clearTimeout(timeout);
         logger.error('CDP WebSocket error', err.message);
-        if (!this._connected) {
-          reject(err);
-        }
+        // No-op if already resolved
+        reject(err);
       });
     });
   }
@@ -121,12 +133,13 @@ export class CDPConnection extends EventEmitter {
   }
 
   disconnect(): void {
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-      this._connected = false;
-      this.rejectAllPending();
-    }
+    const ws = this.ws;
+    if (!ws) return;
+    // Null out before close() so the socket's async close event is seen as stale
+    this.ws = null;
+    this._connected = false;
+    this.rejectAllPending();
+    ws.close();
   }
 
   private rejectAllPending(): void {

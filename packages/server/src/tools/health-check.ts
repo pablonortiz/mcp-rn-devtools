@@ -1,9 +1,14 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
+import type { SDKBridgeServer } from '../sdk-bridge/sdk-server.js';
 import { probeMetro } from '../cdp/discovery.js';
 import { redactionEnabled } from '../utils/redact.js';
 
-export function registerHealthCheck(server: McpServer, cm: ConnectionManager): void {
+export function registerHealthCheck(
+  server: McpServer,
+  cm: ConnectionManager,
+  sdkBridge: SDKBridgeServer,
+): void {
   server.tool(
     'health_check',
     'Check connection status and diagnose problems: CDP/SDK channels, discovered stores, error/request counts, and actionable hints when something is not connected.',
@@ -16,6 +21,15 @@ export function registerHealthCheck(server: McpServer, cm: ConnectionManager): v
         `Redaction: ${redactionEnabled() ? 'on' : 'OFF (MCP_RN_NO_REDACT=1)'}`,
         `Uptime: ${Math.round(cm.uptime / 1000)}s`,
       ];
+
+      if (sdkBridge.portConflict) {
+        lines.push(
+          '',
+          '⚠ ANOTHER mcp-rn-devtools INSTANCE IS RUNNING (SDK port already in use).',
+          'Hermes admits a single debugger, so instances steal the CDP session from each other.',
+          'Fix: kill the stale server(s) — check "ps aux | grep mcp-rn-devtools" — keeping only this session\'s one.',
+        );
+      }
 
       if (cm.connected) {
         const summary = await cm.agentBridge.summary(cm.cdp).catch(() => null);
