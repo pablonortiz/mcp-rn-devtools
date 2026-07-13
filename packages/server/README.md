@@ -1,27 +1,258 @@
 # mcp-rn-devtools
 
-MCP server for React Native runtime debugging. Connects to your running RN app via CDP and provides tools for Claude to inspect logs, errors, network requests, and more.
+[![CI](https://img.shields.io/github/actions/workflow/status/pablonortiz/mcp-rn-devtools/ci.yml?branch=master&style=flat-square&label=CI)](https://github.com/pablonortiz/mcp-rn-devtools/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/mcp-rn-devtools?style=flat-square&color=CB3837)](https://www.npmjs.com/package/mcp-rn-devtools)
+[![npm version](https://img.shields.io/npm/v/mcp-rn-devtools-sdk?style=flat-square&color=CB3837&label=sdk)](https://www.npmjs.com/package/mcp-rn-devtools-sdk)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
-See the [main README](../../README.md) for full documentation.
+An MCP server that gives Claude (or any MCP host) real-time access to your running React Native app — **including your Redux state and AsyncStorage, with zero app changes**. Console logs, errors, network, state, storage, action log, navigation, performance profiling, and more.
 
-## Usage
+## Why this one
 
-```bash
-npx mcp-rn-devtools
+- **True zero-config state access.** A runtime agent injected over the Chrome DevTools Protocol walks the React fiber tree to discover your Redux store — no SDK, no middleware, no exposing the store on a global. Reading AsyncStorage works the same way (native module proxy). Install the server, ask Claude about your state.
+- **Headless.** No desktop app to keep open, no toggle to remember. Works in fully autonomous agent workflows and CI.
+- **Secrets redacted by default.** Tokens, passwords, auth headers, and JWT-shaped strings are masked server-side before anything reaches the LLM (`MCP_RN_NO_REDACT=1` to opt out).
+- **Built for agent loops.** `clear_buffers` → reproduce → read. `wait_for_log` blocks until the app emits a matching log. `get_state_diff` shows exactly what changed between two moments.
+
+## How It Works
+
+```
+Claude / MCP Host
+       │ MCP (stdio)
+       ▼
+  mcp-rn-devtools (server)
+    ├── CDP WebSocket ──► RN App (Hermes / Metro)   ← zero config
+    │     └── runtime agent (injected): Redux discovery,
+    │         AsyncStorage, action log, navigation
+    └── SDK WebSocket ◄── mcp-rn-devtools-sdk        ← optional enhancer
 ```
 
-Or add to your MCP config:
+**Layer 1 — CDP + runtime agent (zero config):** Connects via Chrome DevTools Protocol through Metro's debugger proxy. Captures console logs, errors, warnings, and network requests, and injects a runtime agent that discovers Redux stores / React Navigation / React Query by walking the fiber tree, reads and writes AsyncStorage through the native module proxy, and records every dispatched action. Also provides JS evaluation, memory/CPU profiling, and source map resolution. **No app changes needed.**
+
+**Layer 2 — SDK (optional enhancer):** Install `mcp-rn-devtools-sdk` for what the agent can't reach: Zustand/custom stores, MMKV, per-component render profiling, navigation timing, and a second capture channel that survives CDP drops.
+
+## Installation
+
+### With Claude Code
+
+```bash
+claude mcp add rn-devtools -- npx -y mcp-rn-devtools
+```
+
+Or add `.mcp.json` to your project root (shared with your team):
 
 ```json
 {
   "mcpServers": {
     "rn-devtools": {
       "command": "npx",
-      "args": ["mcp-rn-devtools"]
+      "args": ["-y", "mcp-rn-devtools"]
     }
   }
 }
 ```
+
+### With Claude Desktop
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "rn-devtools": {
+      "command": "npx",
+      "args": ["-y", "mcp-rn-devtools"]
+    }
+  }
+}
+```
+
+### Manual
+
+```bash
+npm install -g mcp-rn-devtools
+```
+
+## Quick Start
+
+1. **Start your React Native app** — Metro must be running, Hermes engine (default since RN 0.70).
+2. **Add the MCP server** to your Claude config (see above).
+3. **Ask Claude** about your app:
+   - *"What's in my Redux store right now?"*
+   - *"Read the AsyncStorage key persist:root"*
+   - *"Clear the buffers, I'll reproduce the bug — then show me what happened"*
+   - *"Dispatch auth/logout and show me the state diff"*
+   - *"Profile the CPU for 3 seconds and show me the hot functions"*
+
+## Available Tools
+
+> **Source legend:** **agent** = zero config, injected via CDP. **CDP** = zero config, protocol-level. **SDK** = requires `mcp-rn-devtools-sdk` in the app. Read-only tools are annotated with `readOnlyHint` so MCP hosts can auto-allow them.
+
+### State & Actions
+
+| Tool | Source | Description |
+|------|--------|-------------|
+| `get_app_state` | agent + SDK | Redux store state with dot-path access and depth control. Stores discovered automatically |
+| `get_state_diff` | agent + SDK | What changed in the store since the last call (baseline → diff workflow) |
+| `get_action_log` | agent + SDK | Dispatched actions with duration and changed slices — recorded automatically, no middleware |
+| `dispatch_action` | agent | Dispatch a Redux action to reproduce states or trigger flows |
+
+### Storage
+
+| Tool | Source | Description |
+|------|--------|-------------|
+| `get_storage_keys` | agent + SDK | List AsyncStorage (zero-config) or MMKV (SDK) keys with search |
+| `get_storage_value` | agent + SDK | Read a storage value — secrets redacted by default |
+
+### Logging & Errors
+
+| Tool | Source | Description |
+|------|--------|-------------|
+| `get_console_logs` | CDP + SDK | Console output with level filter and search |
+| `get_errors` | CDP + SDK | JS errors and exceptions with stack traces |
+| `get_warnings` | CDP + SDK | LogBox warnings from console.warn |
+| `wait_for_log` | CDP + SDK | Block until a log matching a pattern appears — synchronize with app activity |
+
+### Network
+
+| Tool | Source | Description |
+|------|--------|-------------|
+| `get_network_requests` | CDP + SDK | HTTP requests; `verbose` adds headers/bodies with secrets redacted |
+| `get_failed_requests` | CDP + SDK | Requests with status >= 400 or network errors |
+
+### Diagnostics
+
+| Tool | Source | Description |
+|------|--------|-------------|
+| `health_check` | — | Connection status, discovered stores, counts — plus actionable diagnosis when disconnected |
+| `list_targets` | — | Debuggable targets registered with Metro (multi-device) |
+| `select_target` | — | Pin a specific target when several devices/apps are connected |
+| `clear_buffers` | — | Reset captured data before reproducing a scenario |
+
+### Navigation
+
+| Tool | Source | Description |
+|------|--------|-------------|
+| `get_navigation_state` | agent + SDK | Current route and stack (React Navigation), discovered automatically |
+| `get_navigation_timing` | SDK | Screen transition timing with per-route summary |
+
+### Memory & Performance
+
+| Tool | Source | Description |
+|------|--------|-------------|
+| `get_memory_usage` | CDP | Current heap usage (used / total / percentage) |
+| `take_heap_snapshot` | CDP | Heap snapshot summary — object count, top retainers by size |
+| `get_cpu_profile` | CDP | CPU profile for N seconds — hot functions sorted by self time |
+| `force_gc` | CDP | Trigger garbage collection, return before/after heap comparison |
+| `get_render_profile` | SDK | Component render events — mount/update durations, slow renders |
+
+### Advanced
+
+| Tool | Source | Description |
+|------|--------|-------------|
+| `evaluate_js` | CDP | Execute JavaScript in the app's global scope |
+| `resolve_source_location` | CDP | Resolve bundled line:column to original source via Metro source maps |
+
+## Secret Redaction
+
+Every tool that outputs app data (state, storage values, network headers/bodies, action payloads) masks secrets **server-side, before the data reaches the LLM**:
+
+- Values under sensitive keys (`token`, `password`, `authorization`, `apiKey`, `session`, `cookie`, …) → `[REDACTED]`
+- JWT-shaped strings and `Bearer …` tokens anywhere in text → masked
+
+Redaction is a blocklist (defence in depth, not a guarantee) — audit what your app stores before pointing any LLM at it. Opt out with `MCP_RN_NO_REDACT=1`.
+
+## SDK Setup (optional)
+
+The runtime agent covers Redux, AsyncStorage, actions, and navigation with zero config. Install the SDK only if you need Zustand/custom stores, MMKV, render profiling, or navigation timing:
+
+```bash
+npm install mcp-rn-devtools-sdk --save-dev
+```
+
+```tsx
+import { RNDevtoolsProvider } from 'mcp-rn-devtools-sdk';
+
+export default function App() {
+  return (
+    <RNDevtoolsProvider>
+      <YourApp />
+    </RNDevtoolsProvider>
+  );
+}
+```
+
+### With Zustand / custom stores
+
+```tsx
+const useAuthStore = create((set) => ({ /* ... */ }));
+
+<RNDevtoolsProvider stateManagers={{ auth: useAuthStore }}>
+  <YourApp />
+</RNDevtoolsProvider>
+```
+
+State snapshots are **pull-only**: they're serialized only when a tool asks, so the SDK adds zero overhead while idle.
+
+### With MMKV
+
+```tsx
+import { MMKV } from 'react-native-mmkv';
+const storage = new MMKV();
+
+<RNDevtoolsProvider mmkv={storage}>
+  <YourApp />
+</RNDevtoolsProvider>
+```
+
+### Per-Component Render Profiling
+
+```tsx
+import { RNDevtoolsProfiler } from 'mcp-rn-devtools-sdk';
+
+<RNDevtoolsProfiler id="UserList">
+  <UserList />
+</RNDevtoolsProfiler>
+```
+
+### Provider Props
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `navigationRef` | `RefObject` | React Navigation container ref for richer route tracking |
+| `stateManagers` | `Record<string, StateStore>` | Zustand/custom stores for state inspection |
+| `reduxMiddlewares` | `DevtoolsMiddleware[]` | Middlewares created via `createDevtoolsMiddleware()` |
+| `asyncStorage` | `AsyncStorageLike` | AsyncStorage instance (also available zero-config via agent) |
+| `mmkv` | `MMKVLike` | MMKV instance for storage reading |
+| `port` | `number` | WebSocket port (default: `8098`) |
+| `host` | `string` | Dev machine host — auto-detected from the bundle URL (`SourceCode.scriptURL`), works on emulators, physical devices, and `adb reverse` |
+
+> The SDK automatically strips itself from production builds via `__DEV__` checks — zero overhead in release.
+
+## Configuration
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `METRO_PORT` | `8081` | Metro bundler port |
+| `SDK_PORT` | `8098` | SDK WebSocket port |
+| `MCP_RN_NO_REDACT` | - | Disable secret redaction |
+| `MCP_RN_DEBUG` | - | Enable debug logging |
+
+## Architecture Notes
+
+- **Target selection:** RN 0.76+ (Fusebox) no longer advertises `vm: 'Hermes'` — the server picks the main runtime by `reactNative.capabilities.prefersFuseboxFrontend` and skips secondary runtimes like Reanimated's. Legacy targets still work via the `vm` field.
+- **Kick-and-poll:** CDP's `awaitPromise` can't resolve React Native's polyfilled Promises, so async in-app operations (AsyncStorage) fire a callback that writes to a result slot, which the server polls.
+- **Clock skew:** log/error entries carry a server-clock `receivedAt` — device clocks can drift seconds from the host, which would break "wait for new logs" cuts.
+- **Reconnection:** exponential backoff, agent re-injected automatically after every bundle reload.
+- **Action log caveat:** the agent wraps `store.dispatch` at discovery time; components that captured a direct `dispatch` reference *before* discovery bypass the log (rare — discovery runs at connect).
+
+## Compatibility
+
+- **React Native:** 0.71+ (validated against 0.80 / bridgeless / Fusebox)
+- **Engine:** Hermes (default since RN 0.70)
+- **Platforms:** iOS, Android
+- **Node.js:** 20+
+- **MCP Hosts:** Claude Code, Claude Desktop, or any MCP-compatible client
 
 ## License
 

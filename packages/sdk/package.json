@@ -1,6 +1,6 @@
 {
   "name": "mcp-rn-devtools-sdk",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "React Native SDK for mcp-rn-devtools — adds network interception, navigation state, and more to your running app",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -28,6 +28,16 @@
     "navigation"
   ],
   "license": "MIT",
+  "author": "Pablo Nicolás Ortiz (https://github.com/pablonortiz)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pablonortiz/mcp-rn-devtools.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://github.com/pablonortiz/mcp-rn-devtools#readme",
+  "bugs": {
+    "url": "https://github.com/pablonortiz/mcp-rn-devtools/issues"
+  },
   "peerDependencies": {
     "react": ">=18.0.0",
     "react-native": ">=0.71.0"
