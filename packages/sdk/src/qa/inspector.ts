@@ -50,10 +50,13 @@ export interface TouchedViewData {
   touchedViewTag?: number;
 }
 
+/** A host component instance (e.g. a View ref) — opaque to us, consumed by the renderer. */
+export type HostInstance = unknown;
+
 interface RendererLike {
   rendererConfig?: {
     getInspectorDataForViewAtPoint?: (
-      inspectedView: null,
+      inspectedView: HostInstance,
       locationX: number,
       locationY: number,
       callback: (viewData: TouchedViewData) => boolean,
@@ -75,14 +78,21 @@ function getRenderers(): RendererLike[] {
 const INSPECT_TIMEOUT_MS = 500;
 
 /**
- * Hit-tests the app's view tree at a screen point. Resolves null when no
- * renderer answers (hook missing, or the point hits nothing).
+ * Hit-tests the app's view tree at a screen point, scoped to the given host
+ * view's subtree (the renderer requires a real host instance — with null it
+ * throws). Resolves null when no renderer answers.
  */
 export function inspectViewAtPoint(
+  inspectedView: HostInstance,
   locationX: number,
   locationY: number,
 ): Promise<TouchedViewData | null> {
   return new Promise((resolve) => {
+    if (!inspectedView) {
+      resolve(null);
+      return;
+    }
+
     let settled = false;
     const settle = (data: TouchedViewData | null) => {
       if (settled) return;
@@ -97,7 +107,7 @@ export function inspectViewAtPoint(
       if (!inspect) continue;
 
       try {
-        inspect(null, locationX, locationY, (viewData) => {
+        inspect(inspectedView, locationX, locationY, (viewData) => {
           if (viewData && viewData.hierarchy.length > 0) {
             clearTimeout(timer);
             settle(viewData);

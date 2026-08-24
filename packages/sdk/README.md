@@ -4,6 +4,7 @@
 
 > **You probably don't need this package.** The MCP server works zero-config: it discovers Redux stores, reads AsyncStorage, records dispatched actions, and inspects React Navigation by injecting a runtime agent over CDP — with no changes to your app. Install this SDK only for what the agent can't reach:
 
+- **QA capture overlay** — `qaOverlay` mounts a draggable QA button: tap any element on screen, annotate what's wrong, and the report (element + note + runtime context + screenshot) lands in a queue the MCP tools expose to your coding agent
 - **Zustand / custom stores** — stores living in closures aren't discoverable from outside
 - **MMKV** — pass your instance for key/value reading
 - **Per-component render profiling** — `<RNDevtoolsProfiler>` wrapper
@@ -26,6 +27,21 @@ import { RNDevtoolsProvider } from 'mcp-rn-devtools-sdk';
   <App />
 </RNDevtoolsProvider>
 ```
+
+### QA capture overlay
+
+```tsx
+<RNDevtoolsProvider qaOverlay>
+  <App />
+</RNDevtoolsProvider>
+```
+
+A draggable **QA** button appears in dev builds. Tapping it enters selection mode: tap any
+element (the selection snaps to the touched view — arrows walk up/down the component
+hierarchy), write what's wrong, and send it as **Guardar** (queue it) or **Corregir ya**
+(fix now). The server enriches the report with navigation, app state, recent
+actions/network/logs/errors and a device screenshot, and persists it to
+`.qa-reports/pending/<id>/` where the `qa_*` MCP tools pick it up.
 
 ### With Zustand / custom stores
 

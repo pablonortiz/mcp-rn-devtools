@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react';
+import { View } from 'react-native';
 import { isDev } from './utils/dev-guard.js';
 import { WSClient } from './bridge/ws-client.js';
 import { installNetworkInterceptor } from './interceptors/network-interceptor.js';
@@ -50,6 +51,7 @@ function DevtoolsProviderInner({
   qaOverlay,
 }: RNDevtoolsProviderProps) {
   const clientRef = useRef<WSClient | null>(null);
+  const inspectedViewRef = useRef<View | null>(null);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
@@ -142,10 +144,22 @@ function DevtoolsProviderInner({
     ? React.createElement(React.Profiler, { id: 'Root', onRender: profilerCallback }, children)
     : children;
 
+  if (!qaOverlay) {
+    return (
+      <DevtoolsContext.Provider value={{ connected, client: clientRef.current }}>
+        {wrappedChildren}
+      </DevtoolsContext.Provider>
+    );
+  }
+
+  // The wrapper View scopes hit-testing to the app's subtree (the renderer
+  // needs a real host instance) and keeps the overlay out of its own hit-tests.
   return (
     <DevtoolsContext.Provider value={{ connected, client: clientRef.current }}>
-      {wrappedChildren}
-      {qaOverlay ? <QAOverlay /> : null}
+      <View ref={inspectedViewRef} style={{ flex: 1 }} collapsable={false}>
+        {wrappedChildren}
+      </View>
+      <QAOverlay inspectedViewRef={inspectedViewRef} />
     </DevtoolsContext.Provider>
   );
 }

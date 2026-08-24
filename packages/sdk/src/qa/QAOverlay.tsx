@@ -7,6 +7,7 @@ import {
   inspectViewAtPoint,
   measureHierarchyLevel,
   type ElementFrame,
+  type HostInstance,
   type InspectorSource,
   type TouchedViewData,
 } from './inspector.js';
@@ -28,12 +29,17 @@ interface SelectedLevel {
 const OWN_COMPONENTS = new Set(['QAOverlay', 'SelectionLayer', 'QAFab', 'AnnotationPanel', 'HighlightBox']);
 const MAX_COMPONENT_STACK = 4000;
 
+export interface QAOverlayProps {
+  /** Ref to the host view whose subtree gets hit-tested (the app's root wrapper). */
+  inspectedViewRef: React.RefObject<HostInstance>;
+}
+
 /**
  * On-device QA capture: a floating button opens selection mode, a tap
  * snaps to the touched element, and the annotated report travels to the
  * mcp-rn-devtools server over the SDK channel.
  */
-export function QAOverlay() {
+export function QAOverlay({ inspectedViewRef }: QAOverlayProps) {
   const { connected, client } = useContext(DevtoolsContext);
   const [phase, setPhase] = useState<Phase>('idle');
   const [viewData, setViewData] = useState<TouchedViewData | null>(null);
@@ -53,7 +59,7 @@ export function QAOverlay() {
     // Unmount the selection layer before hit-testing so it never inspects itself
     setPhase('inspecting');
     afterCommit(async () => {
-      const data = await inspectPoint(pageX, pageY);
+      const data = await inspectPoint(inspectedViewRef.current, pageX, pageY);
       if (!data) {
         reset();
         return;
@@ -132,12 +138,16 @@ function afterCommit(work: () => void): void {
 }
 
 /** Hit-tests the point, retrying once if the overlay caught its own views. */
-async function inspectPoint(pageX: number, pageY: number): Promise<TouchedViewData | null> {
-  const data = await inspectViewAtPoint(pageX, pageY);
+async function inspectPoint(
+  inspectedView: HostInstance,
+  pageX: number,
+  pageY: number,
+): Promise<TouchedViewData | null> {
+  const data = await inspectViewAtPoint(inspectedView, pageX, pageY);
   if (!data || !hitsOwnOverlay(data)) return data;
 
   await new Promise((resolve) => setTimeout(resolve, 60));
-  const retried = await inspectViewAtPoint(pageX, pageY);
+  const retried = await inspectViewAtPoint(inspectedView, pageX, pageY);
   return retried && !hitsOwnOverlay(retried) ? retried : null;
 }
 

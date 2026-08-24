@@ -153,6 +153,17 @@ npm install -g mcp-rn-devtools
 | `evaluate_js` | CDP | Execute JavaScript in the app's global scope |
 | `resolve_source_location` | CDP | Resolve bundled line:column to original source via Metro source maps |
 
+### QA Capture Loop
+
+| Tool | Source | Description |
+|------|--------|-------------|
+| `qa_list_reports` | SDK | List issues reported from the on-device QA overlay (pending/resolved queue) |
+| `qa_get_report` | SDK | One report with full context: note, selected element, navigation, state, recent activity, screenshot path |
+| `qa_wait_for_report` | SDK | Block until the next report arrives — live-fix mode while someone tests on the device |
+| `qa_resolve_report` | — | Mark a report as resolved after acting on it |
+
+The overlay ships with the SDK: mount `<RNDevtoolsProvider qaOverlay>` and a draggable **QA** button appears in dev builds. Tap it, tap any element on screen (selection snaps to the real view, with hierarchy navigation), write a note, and choose **save for later** or **fix now**. The server enriches each report with navigation state, app state, recent actions/network/logs/errors and an `adb` screenshot, then persists it to `.qa-reports/pending/<id>/` — ready for a coding agent to pick up, fix, and resolve.
+
 ## Secret Redaction
 
 Every tool that outputs app data (state, storage values, network headers/bodies, action payloads) masks secrets **server-side, before the data reaches the LLM**:
