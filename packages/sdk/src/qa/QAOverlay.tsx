@@ -12,10 +12,13 @@ import {
   type TouchedViewData,
 } from './inspector.js';
 import { flattenStyle, serializeProps } from './safe-props.js';
+import { getAppId } from '../utils/platform.js';
+import type { WSClient } from '../bridge/ws-client.js';
 import { QAFab } from './QAFab.js';
 import { SelectionLayer } from './SelectionLayer.js';
 import { HighlightBox } from './HighlightBox.js';
 import { AnnotationPanel } from './AnnotationPanel.js';
+import { FeedbackToast, type ToastData } from './FeedbackToast.js';
 
 type Phase = 'idle' | 'selecting' | 'inspecting' | 'annotating';
 
@@ -46,6 +49,7 @@ export function QAOverlay({ inspectedViewRef }: QAOverlayProps) {
   const [level, setLevel] = useState<SelectedLevel | null>(null);
   const [note, setNote] = useState('');
   const [sentCount, setSentCount] = useState(0);
+  const [toast, setToast] = useState<ToastData | null>(null);
 
   const reset = () => {
     Keyboard.dismiss();
@@ -96,9 +100,23 @@ export function QAOverlay({ inspectedViewRef }: QAOverlayProps) {
     if (!viewData || !level || !client) return;
 
     const report = buildPayload(note, mode, viewData, level);
-    client.send({ type: 'qa:report', payload: { report }, timestamp: Date.now(), id: uuid() });
+    const messageId = uuid();
+    client.send({ type: 'qa:report', payload: { report }, timestamp: Date.now(), id: messageId });
     setSentCount((count) => count + 1);
     reset();
+
+    void awaitAck(client, messageId).then((ack) => {
+      if (!ack) {
+        setToast({ kind: 'warn', text: '⚠ Enviado, sin confirmación del server' });
+      } else if (ack.listenerActive) {
+        setToast({ kind: 'listening', text: '🤖 Claude lo está tomando' });
+      } else {
+        setToast({
+          kind: 'queued',
+          text: `⏸ Encolado (${ack.pendingCount} pendientes) — no hay agente escuchando`,
+        });
+      }
+    });
   };
 
   if (phase === 'selecting') {
@@ -119,6 +137,7 @@ export function QAOverlay({ inspectedViewRef }: QAOverlayProps) {
           levelCount={viewData.hierarchy.length}
           note={note}
           connected={connected}
+          appLabel={getAppId()}
           onChangeNote={setNote}
           onChangeLevel={handleChangeLevel}
           onSave={() => handleSubmit('queue')}
@@ -129,7 +148,36 @@ export function QAOverlay({ inspectedViewRef }: QAOverlayProps) {
     );
   }
 
-  return <QAFab onPress={() => setPhase('selecting')} badgeCount={sentCount} connected={connected} />;
+  return (
+    <>
+      <QAFab onPress={() => setPhase('selecting')} badgeCount={sentCount} connected={connected} />
+      {toast ? <FeedbackToast toast={toast} onHide={() => setToast(null)} /> : null}
+    </>
+  );
+}
+
+interface AckPayload {
+  listenerActive: boolean;
+  pendingCount: number;
+}
+
+const ACK_TIMEOUT_MS = 3000;
+
+function awaitAck(client: WSClient, requestId: string): Promise<AckPayload | null> {
+  return new Promise((resolve) => {
+    const unsubscribe = client.onMessage((msg) => {
+      if (msg.type !== 'qa:report:ack') return;
+      const payload = msg.payload as unknown as { requestId?: string } & AckPayload;
+      if (payload.requestId !== requestId) return;
+      clearTimeout(timer);
+      unsubscribe();
+      resolve(payload);
+    });
+    const timer = setTimeout(() => {
+      unsubscribe();
+      resolve(null);
+    }, ACK_TIMEOUT_MS);
+  });
 }
 
 /** Runs work after the current state update has been committed and mounted. */

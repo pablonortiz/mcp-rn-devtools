@@ -11,4 +11,7 @@ export default defineConfig({
     js: "// mcp-rn-devtools server",
   },
   noExternal: ['@mcp-rn-devtools/shared'],
+  loader: {
+    '.html': 'text',
+  },
 });

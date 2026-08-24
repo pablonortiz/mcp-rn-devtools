@@ -11,6 +11,8 @@ export const GLOBAL_NETWORK_KEY = '__RN_DEVTOOLS_NETWORK__';
 export const GLOBAL_INJECTED_KEY = '__RN_DEVTOOLS_INJECTED__';
 
 export const QA_REPORTS_DIRNAME = '.qa-reports';
+export const QA_COCKPIT_PORT = 8099;
+export const QA_UNKNOWN_APP = 'unknown-app';
 export const QA_RECENT_ACTIONS = 20;
 export const QA_RECENT_NETWORK = 15;
 export const QA_RECENT_LOGS = 30;

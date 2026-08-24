@@ -11,8 +11,7 @@ import { NativeModules, Platform } from 'react-native';
  * Fallback (embedded bundle → file:// scriptURL): platform defaults.
  */
 export function getDefaultHost(): string {
-  const scriptURL = (NativeModules as { SourceCode?: { scriptURL?: string } })
-    ?.SourceCode?.scriptURL;
+  const scriptURL = getScriptURL();
   const host = scriptURL?.match(/^https?:\/\/([^:/]+)/)?.[1];
   if (host) return host;
 
@@ -20,4 +19,25 @@ export function getDefaultHost(): string {
     return '10.0.2.2';
   }
   return 'localhost';
+}
+
+/**
+ * Application id, from the `app=` query param Metro puts in the bundle URL
+ * (e.g. "in.janis.picking.beta"). Null on embedded bundles.
+ */
+export function getAppId(): string | null {
+  const scriptURL = getScriptURL();
+  const appId = scriptURL?.match(/[?&]app=([^&]+)/)?.[1];
+  return appId ? decodeURIComponent(appId) : null;
+}
+
+interface SourceCodeModule {
+  scriptURL?: string;
+  getConstants?: () => { scriptURL?: string };
+}
+
+function getScriptURL(): string | undefined {
+  const sourceCode = (NativeModules as { SourceCode?: SourceCodeModule })?.SourceCode;
+  // Legacy modules expose scriptURL as a property; TurboModules via getConstants()
+  return sourceCode?.scriptURL ?? sourceCode?.getConstants?.().scriptURL;
 }

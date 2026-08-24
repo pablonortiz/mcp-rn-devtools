@@ -81,13 +81,29 @@ function DevtoolsProviderInner({
     };
   }, [port, host]);
 
-  // Navigation connector
+  // Navigation connector — the container ref can populate after `connected`
+  // flips (e.g. on reloads), so retry until it shows up.
   useEffect(() => {
     const client = clientRef.current;
-    if (!client || !navigationRef?.current) return;
+    if (!client) return;
 
-    const disconnect = connectNavigation(navigationRef.current, client);
-    return disconnect;
+    let disconnect: (() => void) | undefined;
+    const tryConnect = () => {
+      if (!navigationRef?.current) return false;
+      disconnect = connectNavigation(navigationRef.current, client);
+      return true;
+    };
+
+    if (!tryConnect()) {
+      const retry = setInterval(() => {
+        if (tryConnect()) clearInterval(retry);
+      }, 1000);
+      return () => {
+        clearInterval(retry);
+        disconnect?.();
+      };
+    }
+    return () => disconnect?.();
   }, [navigationRef, connected]);
 
   // State manager connectors

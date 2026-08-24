@@ -20,6 +20,7 @@ import { SERVER_VERSION } from '../utils/version.js';
 export class SDKBridgeServer {
   private wss: WebSocketServer | null = null;
   private client: WebSocket | null = null;
+  private _connectedApp: string | null = null;
   private lastNavigationState: NavigationState | null = null;
   private navigationResolvers: Array<(state: NavigationState | null) => void> = [];
   private pingInterval: ReturnType<typeof setInterval> | null = null;
@@ -37,6 +38,11 @@ export class SDKBridgeServer {
   /** True when a newer instance took over: this one released the port and the CDP session. */
   get yielded(): boolean {
     return this._yielded;
+  }
+
+  /** Application id reported by the connected SDK's handshake, if any. */
+  get connectedApp(): string | null {
+    return this._connectedApp;
   }
 
   start(port: number = SDK_WS_PORT): void {
@@ -71,6 +77,7 @@ export class SDKBridgeServer {
       ws.on('close', () => {
         if (this.client === ws) {
           this.client = null;
+          this._connectedApp = null;
           this.connectionManager.sdkConnected = false;
           this.lastNavigationState = null;
           this.stopPing();
@@ -171,9 +178,10 @@ export class SDKBridgeServer {
   private handleMessage(msg: SDKToServerMessage): void {
     switch (msg.type) {
       case 'handshake':
+        this._connectedApp = (msg.payload.appName as string | undefined) ?? null;
         logger.info(
           `SDK handshake: v${msg.payload.sdkVersion}` +
-            (msg.payload.appName ? ` app=${msg.payload.appName}` : ''),
+            (this._connectedApp ? ` app=${this._connectedApp}` : ''),
         );
         break;
 
@@ -251,12 +259,27 @@ export class SDKBridgeServer {
 
       case 'qa:report': {
         const qaMsg = msg as QAReportMessage;
-        this.connectionManager.qaReportManager
-          .capture(qaMsg.payload.report, {
-            getNavigationState: () => this.getNavigationState(),
-            getAppState: () => this.getAppState(),
-          })
-          .catch((e) => logger.error('Failed to capture QA report', (e as Error).message));
+        const qa = this.connectionManager.qaReportManager;
+
+        // Ack right away — before the slow enrichment — so the overlay can tell
+        // the tester whether an agent is actually listening for this report.
+        void qa.pendingCount().then((pending) => {
+          this.sendToClient({
+            type: 'qa:report:ack',
+            payload: {
+              requestId: qaMsg.id,
+              listenerActive: qa.hasWaiters,
+              pendingCount: pending + 1,
+            },
+            timestamp: Date.now(),
+            id: `qa-ack-${Date.now()}`,
+          });
+        });
+
+        qa.capture(qaMsg.payload.report, this._connectedApp ?? 'unknown-app', {
+          getNavigationState: () => this.getNavigationState(),
+          getAppState: () => this.getAppState(),
+        }).catch((e) => logger.error('Failed to capture QA report', (e as Error).message));
         break;
       }
 

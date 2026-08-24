@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QA Cockpit</title>
+<style>
+  :root {
+    --bg: #0b1220; --panel: #111a2c; --panel-2: #16213a; --border: #22304d;
+    --text: #e5ecf8; --muted: #8ca0bf; --accent: #22d3ee;
+    --ok: #34d399; --warn: #fbbf24; --err: #f87171; --fix: #fb923c;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header {
+    position: sticky; top: 0; z-index: 10; background: var(--panel);
+    border-bottom: 1px solid var(--border); padding: 12px 16px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  h1 { font-size: 15px; letter-spacing: .4px; }
+  h1 span { color: var(--accent); }
+  #app-name { color: var(--muted); font-size: 12px; font-family: ui-monospace, monospace; }
+  .pills { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .pill {
+    font-size: 11px; padding: 3px 9px; border-radius: 999px;
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--muted);
+  }
+  .pill.on { color: var(--ok); border-color: rgba(52,211,153,.35); }
+  .pill.off { color: var(--err); border-color: rgba(248,113,113,.35); }
+  #reload {
+    margin-left: auto; font-size: 12px; padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--panel-2); color: var(--text); cursor: pointer;
+  }
+  #reload:hover { border-color: var(--accent); }
+  #reload:disabled { opacity: .45; cursor: default; }
+  #agent-banner { border-radius: 10px; padding: 9px 12px; font-size: 12.5px; font-weight: 600; }
+  #agent-banner.listening { background: rgba(52,211,153,.12); color: var(--ok); border: 1px solid rgba(52,211,153,.3); }
+  #agent-banner.idle { background: rgba(251,191,36,.10); color: var(--warn); border: 1px solid rgba(251,191,36,.3); }
+  #agent-banner code { font-family: ui-monospace, monospace; background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; }
+  main { padding: 12px 16px 40px; display: flex; flex-direction: column; gap: 10px; max-width: 760px; margin: 0 auto; }
+  .empty { color: var(--muted); text-align: center; padding: 48px 0; font-size: 13px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px; display: flex; gap: 12px; cursor: pointer; transition: border-color .15s;
+  }
+  .card:hover { border-color: #33507e; }
+  .card.new { animation: flash 1.2s ease-out; }
+  @keyframes flash { 0% { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(34,211,238,.25); } 100% { box-shadow: none; } }
+  .thumb {
+    width: 64px; height: 120px; border-radius: 8px; object-fit: cover; object-position: top;
+    background: var(--panel-2); border: 1px solid var(--border); flex-shrink: 0;
+  }
+  .thumb.placeholder { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 20px; }
+  .card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+  .note { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+  .chips { display: flex; gap: 5px; flex-wrap: wrap; }
+  .chip { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); font-family: ui-monospace, monospace; }
+  .chip.status-pending { color: var(--warn); border-color: rgba(251,191,36,.35); }
+  .chip.status-resolved { color: var(--ok); border-color: rgba(52,211,153,.35); }
+  .chip.mode-fix-now { color: var(--fix); border-color: rgba(251,146,60,.4); font-weight: 700; }
+  .meta { font-size: 11px; color: var(--muted); }
+  .resolution { font-size: 12px; color: var(--ok); background: rgba(52,211,153,.08); border-radius: 8px; padding: 6px 9px; }
+  .detail { display: none; flex-direction: column; gap: 8px; }
+  .card.expanded .detail { display: flex; }
+  .card.expanded { flex-direction: column; }
+  .card.expanded .thumb { width: 100%; height: auto; max-height: 480px; object-fit: contain; }
+  .detail .hierarchy { font-size: 11px; font-family: ui-monospace, monospace; color: var(--muted); overflow-wrap: anywhere; }
+  footer { padding: 8px 16px 20px; text-align: center; color: var(--muted); font-size: 11px; font-family: ui-monospace, monospace; }
+  #conn-lost { display: none; position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); background: var(--err); color: #111; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 6px 14px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="title-row">
+    <h1>QA <span>Cockpit</span></h1>
+    <span id="app-name">sin app conectada</span>
+  </div>
+  <div class="pills">
+    <span class="pill" id="pill-sdk">SDK</span>
+    <span class="pill" id="pill-cdp">CDP</span>
+    <span class="pill" id="pill-agent">Agente</span>
+    <button id="reload" disabled>↻ Reload app</button>
+  </div>
+  <div id="agent-banner" class="idle">⏸ Sin agente escuchando — corré <code>/qa-live</code> en Claude Code</div>
+</header>
+<main id="list"><div class="empty">Sin reports todavía — marcá algo desde el device con el botón QA</div></main>
+<footer id="basedir"></footer>
+<div id="conn-lost">cockpit desconectado — reintentando…</div>
+
+<script>
+(() => {
+  const list = document.getElementById('list');
+  const reports = new Map();
+  let expanded = null;
+
+  const el = (id) => document.getElementById(id);
+
+  function setState(state) {
+    el('app-name').textContent = state.app || 'sin app conectada';
+    setPill('pill-sdk', state.sdkConnected, 'SDK');
+    setPill('pill-cdp', state.cdpConnected, 'CDP');
+    setPill('pill-agent', state.listenerActive, 'Agente');
+    el('reload').disabled = !state.app;
+
+    const banner = el('agent-banner');
+    if (state.listenerActive) {
+      banner.className = 'listening';
+      banner.textContent = '🤖 Agente escuchando — los "Corregir ya" se procesan al toque';
+    } else {
+      banner.className = 'idle';
+      banner.innerHTML = '⏸ Sin agente escuchando — corré <code>/qa-live</code> en Claude Code';
+    }
+  }
+
+  function setPill(id, on, label) {
+    const pill = el(id);
+    pill.className = 'pill ' + (on ? 'on' : 'off');
+    pill.textContent = (on ? '● ' : '○ ') + label;
+  }
+
+  function timeAgo(iso) {
+    const seconds = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+    if (seconds < 60) return 'hace segundos';
+    if (seconds < 3600) return `hace ${Math.floor(seconds / 60)} min`;
+    if (seconds < 86400) return `hace ${Math.floor(seconds / 3600)} h`;
+    return new Date(iso).toLocaleString();
+  }
+
+  function chip(text, extra) {
+    return `<span class="chip ${extra || ''}">${escapeHtml(text)}</span>`;
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function renderCard(summary) {
+    const card = document.createElement('article');
+    card.className = 'card';
+    card.dataset.id = summary.id;
+    const thumb = summary.hasScreenshot
+      ? `<img class="thumb" loading="lazy" src="/api/reports/${summary.id}/screenshot" alt="">`
+      : `<div class="thumb placeholder">🖼</div>`;
+    card.innerHTML = `
+      ${thumb}
+      <div class="card-body">
+        <div class="note">${escapeHtml(summary.note)}</div>
+        <div class="chips">
+          ${chip(summary.status, 'status-' + summary.status)}
+          ${summary.mode === 'fix-now' ? chip('corregir ya', 'mode-fix-now') : ''}
+          ${chip(summary.selectedName)}
+          ${summary.route ? chip('📍 ' + summary.route) : ''}
+          ${chip(summary.app)}
+        </div>
+        ${summary.resolution ? `<div class="resolution">✔ ${escapeHtml(summary.resolution)}</div>` : ''}
+        <div class="meta">${summary.id} · ${timeAgo(summary.createdAt)}</div>
+        <div class="detail"><div class="hierarchy"></div></div>
+      </div>`;
+    card.addEventListener('click', () => toggleExpand(card, summary.id));
+    return card;
+  }
+
+  async function toggleExpand(card, id) {
+    if (expanded && expanded !== card) expanded.classList.remove('expanded');
+    const isExpanding = !card.classList.contains('expanded');
+    card.classList.toggle('expanded');
+    expanded = isExpanding ? card : null;
+    if (isExpanding && !card.dataset.loaded) {
+      card.dataset.loaded = '1';
+      try {
+        const report = await (await fetch('/api/reports/' + id)).json();
+        card.querySelector('.hierarchy').textContent = (report.element.hierarchy || []).join(' › ');
+      } catch { /* offline */ }
+    }
+  }
+
+  function upsert(summary, isNew) {
+    reports.set(summary.id, summary);
+    const existing = list.querySelector(`[data-id="${summary.id}"]`);
+    const card = renderCard(summary);
+    if (isNew) card.classList.add('new');
+    if (existing) existing.replaceWith(card);
+    else {
+      const empty = list.querySelector('.empty');
+      if (empty) empty.remove();
+      list.prepend(card);
+    }
+  }
+
+  function renderAll(snapshot) {
+    setState(snapshot);
+    el('basedir').textContent = snapshot.baseDir || '';
+    list.innerHTML = snapshot.reports.length
+      ? '' : '<div class="empty">Sin reports todavía — marcá algo desde el device con el botón QA</div>';
+    reports.clear();
+    for (const summary of snapshot.reports) upsert(summary, false);
+  }
+
+  el('reload').addEventListener('click', async () => {
+    el('reload').disabled = true;
+    try { await fetch('/api/reload', { method: 'POST' }); } catch { /* offline */ }
+    setTimeout(() => { el('reload').disabled = false; }, 1500);
+  });
+
+  let socket;
+  function connect() {
+    socket = new WebSocket(`ws://${location.host}`);
+    socket.onopen = () => { el('conn-lost').style.display = 'none'; };
+    socket.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'snapshot') renderAll(msg.data);
+      if (msg.type === 'state') setState(msg.data);
+      if (msg.type === 'report:new') upsert(msg.report, true);
+      if (msg.type === 'report:resolved') upsert(msg.report, false);
+    };
+    socket.onclose = () => {
+      el('conn-lost').style.display = 'block';
+      setTimeout(connect, 2000);
+    };
+  }
+  connect();
+
+  // Fallback refresh: keeps "time ago" fresh and covers missed WS events
+  setInterval(async () => {
+    if (socket?.readyState !== WebSocket.OPEN) return;
+    try { renderAll(await (await fetch('/api/state')).json()); } catch { /* offline */ }
+  }, 30000);
+})();
+</script>
+</body>
+</html>

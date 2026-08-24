@@ -15,6 +15,7 @@ interface AnnotationPanelProps {
   levelCount: number;
   note: string;
   connected: boolean;
+  appLabel: string | null;
   onChangeNote: (note: string) => void;
   onChangeLevel: (direction: -1 | 1) => void;
   onSave: () => void;
@@ -29,6 +30,7 @@ export function AnnotationPanel({
   levelCount,
   note,
   connected,
+  appLabel,
   onChangeNote,
   onChangeLevel,
   onSave,
@@ -78,6 +80,9 @@ export function AnnotationPanel({
           autoFocus
         />
 
+        <Text style={styles.appLabel}>
+          {appLabel ?? 'app desconocida'} {connected ? '● conectado' : '○ sin companion'}
+        </Text>
         {!connected && (
           <Text style={styles.offline}>Companion desconectado — no se puede enviar</Text>
         )}
@@ -157,6 +162,11 @@ const styles = StyleSheet.create({
   offline: {
     color: '#f87171',
     fontSize: 12,
+    textAlign: 'center',
+  },
+  appLabel: {
+    color: '#6b7280',
+    fontSize: 11,
     textAlign: 'center',
   },
   actions: {

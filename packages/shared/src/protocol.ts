@@ -121,6 +121,19 @@ export interface QAReportMessage extends SDKMessage {
   };
 }
 
+// QA capture loop (Server → SDK): immediate ack so the overlay can tell the
+// tester whether an agent is actually listening for fix-now reports.
+export interface QAReportAckMessage extends SDKMessage {
+  type: 'qa:report:ack';
+  payload: {
+    /** The id of the qa:report message being acknowledged. */
+    requestId: string;
+    /** True when a qa_wait_for_report call is currently blocked waiting. */
+    listenerActive: boolean;
+    pendingCount: number;
+  };
+}
+
 // Server → SDK messages
 export interface HandshakeAckMessage extends SDKMessage {
   type: 'handshake:ack';
@@ -187,4 +200,5 @@ export type ServerToSDKMessage =
   | RequestNavigationStateMessage
   | RequestStateMessage
   | RequestStorageKeysMessage
-  | RequestStorageValueMessage;
+  | RequestStorageValueMessage
+  | QAReportAckMessage;

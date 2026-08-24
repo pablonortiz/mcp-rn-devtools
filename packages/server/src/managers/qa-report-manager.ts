@@ -1,4 +1,6 @@
+import { EventEmitter } from 'events';
 import { mkdir, readdir, readFile, rename, writeFile } from 'fs/promises';
+import { homedir } from 'os';
 import path from 'path';
 import {
   QA_RECENT_ACTIONS,
@@ -6,6 +8,7 @@ import {
   QA_RECENT_LOGS,
   QA_RECENT_NETWORK,
   QA_REPORTS_DIRNAME,
+  QA_UNKNOWN_APP,
 } from '@mcp-rn-devtools/shared';
 import type { QAReport, QAReportPayload, QAReportStatus } from '@mcp-rn-devtools/shared';
 import type { ConnectionManager } from './connection-manager.js';
@@ -25,24 +28,39 @@ const APP_STATE_DEPTH = 3;
 /**
  * Receives qa:report captures from the on-device overlay, enriches them with
  * everything the server already observes (navigation, state, network, logs,
- * errors, a device screenshot) and persists them as a reviewable queue:
- * `.qa-reports/pending/<id>/report.json` + `screenshot.png`.
+ * errors, a device screenshot) and persists them as a reviewable queue,
+ * global and keyed by app so reports survive server takeovers and cwd changes:
+ * `~/.qa-reports/<app>/pending/<id>/report.json` + `screenshot.png`.
+ *
+ * Emits: 'captured' (report), 'resolved' (report), 'waiters-changed' (count).
  */
-export class QAReportManager {
+export class QAReportManager extends EventEmitter {
   private reports = new Map<string, QAReport>();
   private waiters: Array<(report: QAReport) => void> = [];
   private loadedFromDisk = false;
   private sequence = 0;
 
-  constructor(private cm: ConnectionManager) {}
-
-  get baseDir(): string {
-    return process.env.RN_QA_REPORTS_DIR ?? path.join(process.cwd(), QA_REPORTS_DIRNAME);
+  constructor(private cm: ConnectionManager) {
+    super();
   }
 
-  async capture(payload: QAReportPayload, enricher: QAEnricher): Promise<QAReport> {
+  get baseDir(): string {
+    return process.env.RN_QA_REPORTS_DIR ?? path.join(homedir(), QA_REPORTS_DIRNAME);
+  }
+
+  /** True while a qa_wait_for_report call is blocked waiting for the next report. */
+  get hasWaiters(): boolean {
+    return this.waiters.length > 0;
+  }
+
+  async pendingCount(): Promise<number> {
+    return (await this.list('pending')).length;
+  }
+
+  async capture(payload: QAReportPayload, app: string, enricher: QAEnricher): Promise<QAReport> {
     const id = this.nextId();
-    const reportDir = path.join(this.baseDir, 'pending', id);
+    const appName = sanitizeApp(app);
+    const reportDir = path.join(this.baseDir, appName, 'pending', id);
     await mkdir(reportDir, { recursive: true });
 
     const [navigation, appState, screenshotOk] = await Promise.all([
@@ -54,6 +72,7 @@ export class QAReportManager {
     const report: QAReport = {
       id,
       createdAt: new Date().toISOString(),
+      app: appName,
       status: 'pending',
       note: payload.note,
       mode: payload.mode,
@@ -84,19 +103,23 @@ export class QAReportManager {
 
     await this.persist(report);
     this.reports.set(id, report);
-    logger.info(`QA report captured: ${id} [${report.mode}] "${report.note.slice(0, 60)}"`);
+    logger.info(`QA report captured: ${appName}/${id} [${report.mode}] "${report.note.slice(0, 60)}"`);
 
     const waiters = this.waiters;
     this.waiters = [];
     for (const resolve of waiters) resolve(report);
+    if (waiters.length > 0) this.emit('waiters-changed', 0);
+    this.emit('captured', report);
 
     return report;
   }
 
-  async list(status?: QAReportStatus): Promise<QAReport[]> {
+  async list(status?: QAReportStatus, app?: string): Promise<QAReport[]> {
     await this.ensureLoaded();
-    const all = Array.from(this.reports.values()).sort((a, b) => a.id.localeCompare(b.id));
-    return status ? all.filter((report) => report.status === status) : all;
+    let all = Array.from(this.reports.values()).sort((a, b) => a.id.localeCompare(b.id));
+    if (status) all = all.filter((report) => report.status === status);
+    if (app) all = all.filter((report) => report.app === app);
+    return all;
   }
 
   async get(id: string): Promise<QAReport | null> {
@@ -109,14 +132,15 @@ export class QAReportManager {
     const report = this.reports.get(id);
     if (!report || report.status === 'resolved') return report ?? null;
 
+    const pendingDir = this.reportDir(report);
     report.status = 'resolved';
     if (resolution) report.resolution = resolution;
 
-    const pendingDir = path.join(this.baseDir, 'pending', id);
-    const resolvedDir = path.join(this.baseDir, 'resolved', id);
+    const resolvedDir = this.reportDir(report);
     await mkdir(path.dirname(resolvedDir), { recursive: true });
     await rename(pendingDir, resolvedDir).catch(() => null);
     await this.persist(report);
+    this.emit('resolved', report);
     return report;
   }
 
@@ -129,14 +153,16 @@ export class QAReportManager {
       };
       const timer = setTimeout(() => {
         this.waiters = this.waiters.filter((candidate) => candidate !== waiter);
+        this.emit('waiters-changed', this.waiters.length);
         resolve(null);
       }, timeoutMs);
       this.waiters.push(waiter);
+      this.emit('waiters-changed', this.waiters.length);
     });
   }
 
   reportDir(report: QAReport): string {
-    return path.join(this.baseDir, report.status, report.id);
+    return path.join(this.baseDir, report.app, report.status, report.id);
   }
 
   private async collectAppState(enricher: QAEnricher): Promise<unknown> {
@@ -166,17 +192,22 @@ export class QAReportManager {
     if (this.loadedFromDisk) return;
     this.loadedFromDisk = true;
 
-    for (const status of ['pending', 'resolved'] as const) {
-      const dir = path.join(this.baseDir, status);
-      const entries = await readdir(dir).catch(() => [] as string[]);
-      for (const id of entries) {
-        if (this.reports.has(id)) continue;
-        const raw = await readFile(path.join(dir, id, 'report.json'), 'utf-8').catch(() => null);
-        if (!raw) continue;
-        try {
-          this.reports.set(id, JSON.parse(raw) as QAReport);
-        } catch {
-          logger.warn(`Skipping unreadable QA report: ${status}/${id}`);
+    const apps = await readdir(this.baseDir).catch(() => [] as string[]);
+    for (const app of apps) {
+      for (const status of ['pending', 'resolved'] as const) {
+        const dir = path.join(this.baseDir, app, status);
+        const entries = await readdir(dir).catch(() => [] as string[]);
+        for (const id of entries) {
+          if (this.reports.has(id)) continue;
+          const raw = await readFile(path.join(dir, id, 'report.json'), 'utf-8').catch(() => null);
+          if (!raw) continue;
+          try {
+            const report = JSON.parse(raw) as QAReport;
+            report.app = report.app ?? app;
+            this.reports.set(id, report);
+          } catch {
+            logger.warn(`Skipping unreadable QA report: ${app}/${status}/${id}`);
+          }
         }
       }
     }
@@ -186,4 +217,9 @@ export class QAReportManager {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     return `${stamp}-${String(++this.sequence).padStart(3, '0')}`;
   }
+}
+
+function sanitizeApp(app: string): string {
+  const cleaned = app.trim().replace(/[^\w.-]+/g, '_');
+  return cleaned || QA_UNKNOWN_APP;
 }

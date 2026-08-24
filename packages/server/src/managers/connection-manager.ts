@@ -62,6 +62,7 @@ export class ConnectionManager extends EventEmitter {
   set sdkConnected(value: boolean) {
     this._sdkConnected = value;
     this.networkManager.setSDKConnected(value);
+    this.emit('sdk-connected-changed', value);
   }
 
   get uptime(): number {
@@ -213,5 +214,6 @@ export class ConnectionManager extends EventEmitter {
     this.stopReconnectPolling();
     this.networkManager.stopPolling();
     this.cdp.disconnect();
+    this.emit('shutdown');
   }
 }

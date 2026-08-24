@@ -1,7 +1,7 @@
 import { SDK_WS_PORT } from '@mcp-rn-devtools/shared';
 import type { SDKMessage } from '@mcp-rn-devtools/shared';
 import { uuid } from '../utils/uuid.js';
-import { getDefaultHost } from '../utils/platform.js';
+import { getAppId, getDefaultHost } from '../utils/platform.js';
 import { SDK_VERSION } from '../version.js';
 
 type MessageHandler = (msg: SDKMessage) => void;
@@ -41,6 +41,7 @@ export class WSClient {
           type: 'handshake',
           payload: {
             sdkVersion: SDK_VERSION,
+            appName: getAppId() ?? undefined,
           },
           timestamp: Date.now(),
           id: uuid(),

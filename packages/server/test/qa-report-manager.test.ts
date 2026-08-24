@@ -61,7 +61,7 @@ describe('QAReportManager', () => {
   });
 
   it('captures a report enriched with navigation, state and buffers, persisted to pending/', async () => {
-    const report = await manager.capture(makePayload(), enricher);
+    const report = await manager.capture(makePayload(), 'in.janis.picking.beta', enricher);
 
     expect(report.status).toBe('pending');
     expect(report.navigation).toEqual({ currentRoute: { name: 'Home' } });
@@ -70,13 +70,13 @@ describe('QAReportManager', () => {
     expect(report.screenshot).toBeNull();
 
     const persisted = JSON.parse(
-      await readFile(path.join(baseDir, 'pending', report.id, 'report.json'), 'utf-8'),
+      await readFile(path.join(baseDir, 'in.janis.picking.beta', 'pending', report.id, 'report.json'), 'utf-8'),
     );
     expect(persisted.note).toBe('La card no ocupa el width total');
   });
 
   it('redacts sensitive values in the enriched app state', async () => {
-    const report = await manager.capture(makePayload(), enricher);
+    const report = await manager.capture(makePayload(), 'in.janis.picking.beta', enricher);
     expect((report.appState as { session: unknown }).session).toBe('[REDACTED]');
   });
 
@@ -89,12 +89,12 @@ describe('QAReportManager', () => {
     });
     manager = new QAReportManager(cm);
 
-    const report = await manager.capture(makePayload(), enricher);
+    const report = await manager.capture(makePayload(), 'in.janis.picking.beta', enricher);
     expect(report.appState).toEqual({ cart: { items: 2 } });
   });
 
   it('lists by status and resolves reports into resolved/', async () => {
-    const captured = await manager.capture(makePayload(), enricher);
+    const captured = await manager.capture(makePayload(), 'in.janis.picking.beta', enricher);
     expect(await manager.list('pending')).toHaveLength(1);
 
     const resolved = await manager.resolve(captured.id, 'width 100% aplicado');
@@ -103,12 +103,12 @@ describe('QAReportManager', () => {
     expect(await manager.list('pending')).toHaveLength(0);
     expect(await manager.list('resolved')).toHaveLength(1);
 
-    await expect(stat(path.join(baseDir, 'resolved', captured.id, 'report.json'))).resolves.toBeTruthy();
-    await expect(stat(path.join(baseDir, 'pending', captured.id))).rejects.toThrow();
+    await expect(stat(path.join(baseDir, 'in.janis.picking.beta', 'resolved', captured.id, 'report.json'))).resolves.toBeTruthy();
+    await expect(stat(path.join(baseDir, 'in.janis.picking.beta', 'pending', captured.id))).rejects.toThrow();
   });
 
   it('reloads persisted reports from disk in a fresh instance', async () => {
-    const captured = await manager.capture(makePayload(), enricher);
+    const captured = await manager.capture(makePayload(), 'in.janis.picking.beta', enricher);
 
     const freshManager = new QAReportManager(makeConnectionManager());
     const loaded = await freshManager.get(captured.id);
@@ -117,7 +117,7 @@ describe('QAReportManager', () => {
 
   it('waitForNext resolves with the next captured report and times out otherwise', async () => {
     const waiting = manager.waitForNext(5000);
-    const captured = await manager.capture(makePayload({ mode: 'fix-now' }), enricher);
+    const captured = await manager.capture(makePayload({ mode: 'fix-now' }), 'in.janis.picking.beta', enricher);
     await expect(waiting).resolves.toMatchObject({ id: captured.id, mode: 'fix-now' });
 
     await expect(manager.waitForNext(50)).resolves.toBeNull();
