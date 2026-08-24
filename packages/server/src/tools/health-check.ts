@@ -22,11 +22,18 @@ export function registerHealthCheck(
         `Uptime: ${Math.round(cm.uptime / 1000)}s`,
       ];
 
-      if (sdkBridge.portConflict) {
+      if (sdkBridge.yielded) {
+        lines.push(
+          '',
+          '⛔ THIS INSTANCE YIELDED to a newer mcp-rn-devtools instance (takeover protocol).',
+          'It released the SDK port and the CDP session and will stay inactive.',
+          'Use the newer session\'s rn-devtools, or restart this MCP server to reclaim.',
+        );
+      } else if (sdkBridge.portConflict) {
         lines.push(
           '',
           '⚠ ANOTHER mcp-rn-devtools INSTANCE IS RUNNING (SDK port already in use).',
-          'Hermes admits a single debugger, so instances steal the CDP session from each other.',
+          'A takeover was requested but the holder did not yield (old version or unresponsive).',
           'Fix: kill the stale server(s) — check "ps aux | grep mcp-rn-devtools" — keeping only this session\'s one.',
         );
       }

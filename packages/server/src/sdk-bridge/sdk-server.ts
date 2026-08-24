@@ -23,12 +23,19 @@ export class SDKBridgeServer {
   private navigationResolvers: Array<(state: NavigationState | null) => void> = [];
   private pingInterval: ReturnType<typeof setInterval> | null = null;
   private _portConflict = false;
+  private _yielded = false;
+  private takeoverAttempted = false;
 
   constructor(private connectionManager: ConnectionManager) {}
 
   /** True when the SDK port was already taken — another server instance is running. */
   get portConflict(): boolean {
     return this._portConflict;
+  }
+
+  /** True when a newer instance took over: this one released the port and the CDP session. */
+  get yielded(): boolean {
+    return this._yielded;
   }
 
   start(port: number = SDK_WS_PORT): void {
@@ -49,8 +56,12 @@ export class SDKBridgeServer {
 
       ws.on('message', (data) => {
         try {
-          const msg: SDKToServerMessage = JSON.parse(data.toString());
-          this.handleMessage(msg);
+          const msg = JSON.parse(data.toString());
+          if (msg?.type === 'takeover') {
+            this.handleTakeover(msg?.payload?.pid);
+            return;
+          }
+          this.handleMessage(msg as SDKToServerMessage);
         } catch (e) {
           logger.error('Failed to parse SDK message', e);
         }
@@ -82,13 +93,78 @@ export class SDKBridgeServer {
     this.wss.on('error', (err) => {
       if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
         this._portConflict = true;
-        logger.error(
-          `SDK port ${port} already in use — another mcp-rn-devtools instance is running and will compete for the CDP session`,
-        );
+        if (!this.takeoverAttempted) {
+          this.takeoverAttempted = true;
+          logger.warn(`SDK port ${port} already in use — requesting takeover from the previous instance`);
+          void this.takeOverPort(port);
+        } else {
+          logger.error(
+            `SDK port ${port} still in use and the holder did not yield — instances will compete for the CDP session`,
+          );
+        }
         return;
       }
       logger.error('SDK bridge server error', err.message);
     });
+  }
+
+  /**
+   * Newest-instance-wins: stale servers from finished sessions linger holding
+   * the port and steal the single Hermes debugger. Ask the holder to yield,
+   * then rebind.
+   */
+  private async takeOverPort(port: number): Promise<void> {
+    const accepted = await this.requestTakeover(port);
+    if (!accepted) {
+      logger.error(
+        `SDK port ${port} holder did not respond to takeover — kill it manually (ps aux | grep mcp-rn-devtools)`,
+      );
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    this.wss?.close();
+    this.wss = null;
+    this._portConflict = false;
+    logger.info('Previous instance yielded — rebinding SDK port');
+    this.start(port);
+  }
+
+  private requestTakeover(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+      const finish = (ok: boolean) => {
+        clearTimeout(timer);
+        try {
+          ws.terminate();
+        } catch {
+          /* already closed */
+        }
+        resolve(ok);
+      };
+      const timer = setTimeout(() => finish(false), 2000);
+      ws.on('open', () => {
+        ws.send(
+          JSON.stringify({
+            type: 'takeover',
+            payload: { pid: process.pid },
+            timestamp: Date.now(),
+            id: `takeover-${process.pid}`,
+          }),
+        );
+        setTimeout(() => finish(true), 300);
+      });
+      ws.on('error', () => finish(false));
+    });
+  }
+
+  private handleTakeover(pid?: number): void {
+    logger.warn(
+      `Takeover requested by a newer mcp-rn-devtools instance${pid ? ` (pid ${pid})` : ''} — releasing the SDK port and the CDP session`,
+    );
+    this._yielded = true;
+    this.connectionManager.shutdown();
+    this.stop();
   }
 
   private handleMessage(msg: SDKToServerMessage): void {
