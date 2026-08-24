@@ -10,6 +10,7 @@ import { connectStateManager, type StateStore } from './connectors/state-connect
 import { connectAsyncStorage, connectMMKV, type AsyncStorageLike, type MMKVLike } from './connectors/storage-connector.js';
 import type { DevtoolsMiddleware } from './connectors/redux-middleware.js';
 import { DevtoolsContext } from './context.js';
+import { QAOverlay } from './qa/QAOverlay.js';
 import { SDK_WS_PORT } from '@mcp-rn-devtools/shared';
 
 interface NavigationContainerRef {
@@ -33,6 +34,8 @@ export interface RNDevtoolsProviderProps {
   mmkv?: MMKVLike;
   /** Redux devtools middlewares to auto-connect. Created via createDevtoolsMiddleware(). */
   reduxMiddlewares?: DevtoolsMiddleware[];
+  /** Mounts the QA capture overlay: a floating button to select elements and report issues. */
+  qaOverlay?: boolean;
 }
 
 function DevtoolsProviderInner({
@@ -44,6 +47,7 @@ function DevtoolsProviderInner({
   asyncStorage,
   mmkv,
   reduxMiddlewares,
+  qaOverlay,
 }: RNDevtoolsProviderProps) {
   const clientRef = useRef<WSClient | null>(null);
   const [connected, setConnected] = useState(false);
@@ -141,6 +145,7 @@ function DevtoolsProviderInner({
   return (
     <DevtoolsContext.Provider value={{ connected, client: clientRef.current }}>
       {wrappedChildren}
+      {qaOverlay ? <QAOverlay /> : null}
     </DevtoolsContext.Provider>
   );
 }

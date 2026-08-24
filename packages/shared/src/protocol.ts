@@ -3,6 +3,7 @@ import type {
   ErrorEntry,
   NavigationState,
   NetworkRequest,
+  QAReportPayload,
   ReduxActionEntry,
   RenderProfileEntry,
   StateSnapshot,
@@ -112,6 +113,14 @@ export interface StorageValueMessage extends SDKMessage {
   };
 }
 
+// QA capture loop (SDK → Server)
+export interface QAReportMessage extends SDKMessage {
+  type: 'qa:report';
+  payload: {
+    report: QAReportPayload;
+  };
+}
+
 // Server → SDK messages
 export interface HandshakeAckMessage extends SDKMessage {
   type: 'handshake:ack';
@@ -169,7 +178,8 @@ export type SDKToServerMessage =
   | StateSnapshotMessage
   | StorageKeysMessage
   | StorageValueMessage
-  | ReduxActionMessage;
+  | ReduxActionMessage
+  | QAReportMessage;
 
 export type ServerToSDKMessage =
   | HandshakeAckMessage

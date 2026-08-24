@@ -130,6 +130,64 @@ export interface ReduxActionEntry {
   storeName: string;
 }
 
+// QA capture loop
+export type QAReportMode = 'queue' | 'fix-now';
+export type QAReportStatus = 'pending' | 'resolved';
+
+export interface QAElementFrame {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
+/** What the on-device overlay knows about the selected element at capture time. */
+export interface QAReportElement {
+  /** Screen-absolute frame of the selected hierarchy level, in dp. */
+  frame: QAElementFrame;
+  /** Component names from root to touched leaf, as reported by the renderer. */
+  hierarchy: string[];
+  /** Index into `hierarchy` of the level the user confirmed. */
+  selectedIndex: number;
+  selectedName: string;
+  componentStack: string;
+  /** Safe-serialized props of the selected level (functions/elements dropped). */
+  props: Record<string, unknown>;
+  /** Flattened style of the selected level, when the element has one. */
+  style: Record<string, unknown> | null;
+  /** JSX source location when the renderer still provides one (pre-React 19). */
+  source: { fileName?: string; lineNumber?: number; columnNumber?: number } | null;
+}
+
+export interface QAReportPayload {
+  note: string;
+  mode: QAReportMode;
+  element: QAReportElement;
+  screen: { width: number; height: number; scale: number };
+}
+
+/** A captured report after server-side enrichment, as persisted to disk. */
+export interface QAReport {
+  id: string;
+  createdAt: string;
+  status: QAReportStatus;
+  note: string;
+  mode: QAReportMode;
+  element: QAReportElement;
+  screen: { width: number; height: number; scale: number };
+  /** NavigationState when it came from the SDK; the agent's looser shape otherwise. */
+  navigation: unknown;
+  appState: unknown | null;
+  recentActions: ReduxActionEntry[];
+  recentNetwork: Array<Pick<NetworkRequest, 'url' | 'method' | 'status' | 'duration' | 'error'>>;
+  recentLogs: Array<Pick<ConsoleLogEntry, 'level' | 'message' | 'timestamp'>>;
+  recentErrors: Array<Pick<ErrorEntry, 'message' | 'isFatal' | 'timestamp' | 'componentStack'>>;
+  /** File name of the screenshot inside the report directory, when captured. */
+  screenshot: string | null;
+  /** Filled by qa_resolve_report: what was done about it. */
+  resolution?: string;
+}
+
 // Phase 5d: Storage
 export type StorageBackend = 'async-storage' | 'mmkv';
 

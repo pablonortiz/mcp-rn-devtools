@@ -25,6 +25,7 @@ import { registerClearBuffers } from './clear-buffers.js';
 import { registerWaitForLog } from './wait-for-log.js';
 import { registerGetStateDiff } from './get-state-diff.js';
 import { registerTargetTools } from './targets.js';
+import { registerQAReportTools } from './qa-reports.js';
 
 export function registerAllTools(
   server: McpServer,
@@ -63,4 +64,6 @@ export function registerAllTools(
   // Runtime
   registerEvaluateJS(server, cm);
   registerResolveSourceLocation(server, cm);
+  // QA capture loop
+  registerQAReportTools(server, cm);
 }

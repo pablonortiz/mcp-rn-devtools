@@ -4,6 +4,7 @@ import type {
   SDKToServerMessage,
   NavigationState,
   NavigationStateMessage,
+  QAReportMessage,
   RenderProfileMessage,
   StateSnapshotMessage,
   StorageKeysMessage,
@@ -245,6 +246,17 @@ export class SDKBridgeServer {
       case 'redux:action': {
         const actionMsg = msg as ReduxActionMessage;
         this.connectionManager.actionManager.add(actionMsg.payload.entry);
+        break;
+      }
+
+      case 'qa:report': {
+        const qaMsg = msg as QAReportMessage;
+        this.connectionManager.qaReportManager
+          .capture(qaMsg.payload.report, {
+            getNavigationState: () => this.getNavigationState(),
+            getAppState: () => this.getAppState(),
+          })
+          .catch((e) => logger.error('Failed to capture QA report', (e as Error).message));
         break;
       }
 

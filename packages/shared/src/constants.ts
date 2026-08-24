@@ -10,6 +10,12 @@ export const NETWORK_POLL_INTERVAL_MS = 2000;
 export const GLOBAL_NETWORK_KEY = '__RN_DEVTOOLS_NETWORK__';
 export const GLOBAL_INJECTED_KEY = '__RN_DEVTOOLS_INJECTED__';
 
+export const QA_REPORTS_DIRNAME = '.qa-reports';
+export const QA_RECENT_ACTIONS = 20;
+export const QA_RECENT_NETWORK = 15;
+export const QA_RECENT_LOGS = 30;
+export const QA_RECENT_ERRORS = 10;
+
 export const RENDER_BUFFER_SIZE = 500;
 export const RENDER_PROFILE_SLOW_THRESHOLD_MS = 16;
 export const STATE_BUFFER_SIZE = 100;

@@ -9,3 +9,4 @@ export { connectAsyncStorage, connectMMKV } from './connectors/storage-connector
 export type { AsyncStorageLike, MMKVLike } from './connectors/storage-connector.js';
 export { createDevtoolsMiddleware } from './connectors/redux-middleware.js';
 export type { DevtoolsMiddleware } from './connectors/redux-middleware.js';
+export { QAOverlay } from './qa/QAOverlay.js';
