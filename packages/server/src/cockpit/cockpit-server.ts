@@ -191,7 +191,7 @@ export class CockpitServer {
       app: this.sdkBridge.connectedApp,
       sdkConnected: this.cm.sdkConnected,
       cdpConnected: this.cm.connected,
-      listenerActive: this.cm.qaReportManager.hasWaiters,
+      listenerActive: this.cm.qaReportManager.isListenerActive(),
     };
   }
 

@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { statSync } from 'fs';
 import { mkdir, readdir, readFile, rename, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import path from 'path';
@@ -24,6 +25,8 @@ export interface QAEnricher {
 
 const SCREENSHOT_DELAY_MS = 600;
 const APP_STATE_DEPTH = 3;
+const PRESENCE_FILE = '.listener';
+const PRESENCE_FRESH_MS = 90_000;
 
 /**
  * Receives qa:report captures from the on-device overlay, enriches them with
@@ -51,6 +54,21 @@ export class QAReportManager extends EventEmitter {
   /** True while a qa_wait_for_report call is blocked waiting for the next report. */
   get hasWaiters(): boolean {
     return this.waiters.length > 0;
+  }
+
+  /**
+   * Whether an agent is watching the queue: either a blocked qa_wait_for_report
+   * call, or a fresh presence file — Monitor-style listeners (zero-token
+   * file-based waits) keep `<baseDir>/.listener` touched while they watch.
+   */
+  isListenerActive(): boolean {
+    if (this.hasWaiters) return true;
+    try {
+      const { mtimeMs } = statSync(path.join(this.baseDir, PRESENCE_FILE));
+      return Date.now() - mtimeMs < PRESENCE_FRESH_MS;
+    } catch {
+      return false;
+    }
   }
 
   async pendingCount(): Promise<number> {

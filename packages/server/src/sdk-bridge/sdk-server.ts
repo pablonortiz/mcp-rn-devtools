@@ -268,7 +268,7 @@ export class SDKBridgeServer {
             type: 'qa:report:ack',
             payload: {
               requestId: qaMsg.id,
-              listenerActive: qa.hasWaiters,
+              listenerActive: qa.isListenerActive(),
               pendingCount: pending + 1,
             },
             timestamp: Date.now(),

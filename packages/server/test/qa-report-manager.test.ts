@@ -115,6 +115,24 @@ describe('QAReportManager', () => {
     expect(loaded?.note).toBe(captured.note);
   });
 
+  it('isListenerActive covers both blocked waiters and a fresh presence file', async () => {
+    expect(manager.isListenerActive()).toBe(false);
+
+    const waiting = manager.waitForNext(100);
+    expect(manager.isListenerActive()).toBe(true);
+    await waiting;
+    expect(manager.isListenerActive()).toBe(false);
+
+    const { writeFile, utimes } = await import('fs/promises');
+    const presence = path.join(baseDir, '.listener');
+    await writeFile(presence, '');
+    expect(manager.isListenerActive()).toBe(true);
+
+    const stale = new Date(Date.now() - 5 * 60 * 1000);
+    await utimes(presence, stale, stale);
+    expect(manager.isListenerActive()).toBe(false);
+  });
+
   it('waitForNext resolves with the next captured report and times out otherwise', async () => {
     const waiting = manager.waitForNext(5000);
     const captured = await manager.capture(makePayload({ mode: 'fix-now' }), 'in.janis.picking.beta', enricher);
