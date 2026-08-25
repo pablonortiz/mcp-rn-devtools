@@ -29,6 +29,33 @@ export async function firstDevice(adb: string): Promise<string | null> {
   return line ? line.split('\t')[0].trim() : null;
 }
 
+/**
+ * Reverse-forwards the given ports on every connected device (idempotent).
+ * Physical devices over USB reach Metro and the SDK bridge via localhost this
+ * way — no manual `adb reverse` to forget.
+ */
+export async function reversePortsOnAllDevices(ports: number[]): Promise<void> {
+  const adb = findAdb();
+  try {
+    const { stdout } = await execFileAsync(adb, ['devices'], { timeout: ADB_TIMEOUT_MS });
+    const devices = stdout
+      .split('\n')
+      .slice(1)
+      .filter((row) => row.trim().endsWith('device'))
+      .map((row) => row.split('\t')[0].trim());
+
+    for (const device of devices) {
+      for (const port of ports) {
+        await execFileAsync(adb, ['-s', device, 'reverse', `tcp:${port}`, `tcp:${port}`], {
+          timeout: ADB_TIMEOUT_MS,
+        }).catch(() => null);
+      }
+    }
+  } catch {
+    // adb unavailable — nothing to forward
+  }
+}
+
 /** Force-stops and relaunches an app by package id — a reliable full JS reload. */
 export async function relaunchApp(packageId: string): Promise<boolean> {
   const adb = findAdb();
