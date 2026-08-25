@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
 import { CockpitServer } from '../src/cockpit/cockpit-server.js';
+import { QAAgentRunner } from '../src/agent/qa-agent-runner.js';
 import { QAReportManager, type QAEnricher } from '../src/managers/qa-report-manager.js';
 import type { ConnectionManager } from '../src/managers/connection-manager.js';
 import type { SDKBridgeServer } from '../src/sdk-bridge/sdk-server.js';
@@ -64,7 +65,7 @@ describe('CockpitServer', () => {
     process.env.RN_QA_REPORTS_DIR = baseDir;
     cm = makeConnectionManager();
     const sdkBridge = { connectedApp: 'in.janis.picking.beta', yielded: false } as SDKBridgeServer;
-    cockpit = new CockpitServer(cm, sdkBridge);
+    cockpit = new CockpitServer(cm, sdkBridge, new QAAgentRunner(cm));
     cockpit.start(0);
     await vi.waitFor(() => {
       if (cockpit.port === null) throw new Error('not listening yet');
@@ -106,6 +107,40 @@ describe('CockpitServer', () => {
     const state = await (await fetch(`${baseUrl}/api/state`)).json();
     expect(state.listenerActive).toBe(true);
     await waiting;
+  });
+
+  it('exposes agent state, refuses start without mapping, and manages config', async () => {
+    const agentState = await (await fetch(`${baseUrl}/api/agent/state`)).json();
+    expect(agentState.status).toBe('off');
+
+    const started = await fetch(`${baseUrl}/api/agent/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(started.status).toBe(409);
+    expect((await started.json()).error).toContain('No repo mapped');
+
+    const put = await fetch(`${baseUrl}/api/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apps: { 'in.janis.picking.beta': '/tmp/some-repo' } }),
+    });
+    expect((await put.json()).ok).toBe(true);
+    const config = await (await fetch(`${baseUrl}/api/config`)).json();
+    expect(config.apps['in.janis.picking.beta']).toBe('/tmp/some-repo');
+  });
+
+  it('resolves a report via the REST endpoint the agent uses', async () => {
+    const captured = await cm.qaReportManager.capture(makePayload(), 'in.janis.picking.beta', enricher);
+
+    const response = await fetch(`${baseUrl}/api/reports/${captured.id}/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resolution: 'width 100% aplicado' }),
+    });
+    expect((await response.json())).toMatchObject({ ok: true, status: 'resolved' });
+    expect((await cm.qaReportManager.get(captured.id))?.resolution).toBe('width 100% aplicado');
   });
 
   it('serves a full report by id and 404s unknown ids', async () => {

@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ConnectionManager } from './managers/connection-manager.js';
 import { SDKBridgeServer } from './sdk-bridge/sdk-server.js';
 import { CockpitServer } from './cockpit/cockpit-server.js';
+import { QAAgentRunner } from './agent/qa-agent-runner.js';
 import { registerAllTools } from './tools/index.js';
 import { SERVER_VERSION } from './utils/version.js';
 import { logger } from './utils/logger.js';
@@ -27,7 +28,8 @@ export function createServer(options: ServerOptions = {}) {
 
   const connectionManager = new ConnectionManager(options.metroPort);
   const sdkBridge = new SDKBridgeServer(connectionManager);
-  const cockpit = new CockpitServer(connectionManager, sdkBridge);
+  const agentRunner = new QAAgentRunner(connectionManager);
+  const cockpit = new CockpitServer(connectionManager, sdkBridge, agentRunner);
 
   registerAllTools(mcpServer, connectionManager, sdkBridge);
 
@@ -36,6 +38,7 @@ export function createServer(options: ServerOptions = {}) {
     connectionManager,
     sdkBridge,
     cockpit,
+    agentRunner,
 
     async start() {
       // Start SDK bridge server
@@ -51,6 +54,7 @@ export function createServer(options: ServerOptions = {}) {
     },
 
     shutdown() {
+      agentRunner.stop();
       connectionManager.shutdown();
       sdkBridge.stop();
       cockpit.stop();
