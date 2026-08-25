@@ -57,6 +57,7 @@ export async function reversePortsOnAllDevices(ports: number[]): Promise<void> {
 }
 
 const MAX_PNG_BYTES = 20 * 1024 * 1024;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 /** Captures the first device's screen as a PNG buffer (null when unavailable). */
 export async function captureScreenPng(): Promise<Buffer | null> {
@@ -69,7 +70,14 @@ export async function captureScreenPng(): Promise<Buffer | null> {
       maxBuffer: MAX_PNG_BYTES,
       timeout: ADB_TIMEOUT_MS,
     });
-    return stdout && stdout.length > 0 ? (stdout as unknown as Buffer) : null;
+    if (!stdout || stdout.length === 0) return null;
+
+    // Some devices (Samsung multi-display) print a text warning before the
+    // PNG bytes — cut from the PNG signature onward.
+    const raw = stdout as unknown as Buffer;
+    const start = raw.indexOf(PNG_SIGNATURE);
+    if (start < 0) return null;
+    return start === 0 ? raw : raw.subarray(start);
   } catch {
     return null;
   }
