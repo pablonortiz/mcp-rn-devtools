@@ -4,12 +4,12 @@ import { readFile } from 'fs/promises';
 import path from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { QA_COCKPIT_PORT } from '@mcp-rn-devtools/shared';
-import type { QAReport } from '@mcp-rn-devtools/shared';
+import type { QAReport, QAReportElement, QAReportPayload } from '@mcp-rn-devtools/shared';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 import type { SDKBridgeServer } from '../sdk-bridge/sdk-server.js';
 import type { QAAgentRunner, AgentActivity } from '../agent/qa-agent-runner.js';
 import { readConfig, writeConfig } from '../agent/qa-config.js';
-import { relaunchApp } from '../utils/adb.js';
+import { captureScreenPng, getDeviceScreenInfo, relaunchApp } from '../utils/adb.js';
 import { logger } from '../utils/logger.js';
 import cockpitHtml from './cockpit.html';
 
@@ -168,8 +168,68 @@ export class CockpitServer {
       return;
     }
 
+    if (url.pathname === '/api/device/screenshot') {
+      const png = await captureScreenPng();
+      if (!png) return this.json(res, 503, { error: 'no device connected or screencap failed' });
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+      res.end(png);
+      return;
+    }
+
+    if (url.pathname === '/api/device/info') {
+      const info = await getDeviceScreenInfo();
+      if (!info) return this.json(res, 503, { error: 'no device connected' });
+      this.json(res, 200, { ...info, scale: info.density / 160 });
+      return;
+    }
+
+    if (url.pathname === '/api/inspect' && req.method === 'POST') {
+      if (!this.cm.connected) {
+        return this.json(res, 503, { ok: false, error: 'CDP not connected — is the app running with Metro?' });
+      }
+      const body = await readBody(req);
+      const result = await this.cm.agentBridge.qaHitTest(this.cm.cdp, Number(body.x), Number(body.y));
+      this.json(res, result.ok ? 200 : 502, result);
+      return;
+    }
+
+    if (url.pathname === '/api/inspect/level' && req.method === 'POST') {
+      if (!this.cm.connected) {
+        return this.json(res, 503, { ok: false, error: 'CDP not connected' });
+      }
+      const body = await readBody(req);
+      const result = await this.cm.agentBridge.qaMeasureLevel(this.cm.cdp, Number(body.index));
+      this.json(res, result.ok ? 200 : 502, result);
+      return;
+    }
+
+    if (url.pathname === '/api/reports' && req.method === 'POST') {
+      const body = await readBody(req);
+      const note = typeof body.note === 'string' ? body.note.trim() : '';
+      const element = body.element as QAReportElement | undefined;
+      if (!note || !element?.frame || !Array.isArray(element.hierarchy)) {
+        return this.json(res, 400, { ok: false, error: 'note and element (frame, hierarchy) required' });
+      }
+
+      const payload: QAReportPayload = {
+        note,
+        mode: body.mode === 'fix-now' ? 'fix-now' : 'queue',
+        element: { ...element, source: element.source ?? null },
+        screen: (body.screen as QAReportPayload['screen']) ?? { width: 0, height: 0, scale: 1 },
+      };
+      const app = this.connectedAppId() ?? 'unknown-app';
+      const report = await this.cm.qaReportManager.capture(payload, app, {
+        getNavigationState: async () =>
+          (await this.sdkBridge.getNavigationState()) ??
+          (this.cm.connected ? await this.cm.agentBridge.getNavigation(this.cm.cdp).catch(() => null) : null),
+        getAppState: () => this.sdkBridge.getAppState(),
+      });
+      this.json(res, 200, { ok: true, id: report.id, mode: report.mode });
+      return;
+    }
+
     if (url.pathname === '/api/reload' && req.method === 'POST') {
-      const app = this.sdkBridge.connectedApp;
+      const app = this.connectedAppId();
       if (!app) return this.json(res, 409, { ok: false, error: 'no app connected' });
       const ok = await relaunchApp(app);
       this.json(res, ok ? 200 : 502, { ok, app });
@@ -205,7 +265,7 @@ export class CockpitServer {
 
     if (url.pathname === '/api/agent/start' && req.method === 'POST') {
       const body = await readBody(req);
-      const app = (typeof body.app === 'string' && body.app) || this.sdkBridge.connectedApp;
+      const app = (typeof body.app === 'string' && body.app) || this.connectedAppId();
       if (!app) return this.json(res, 409, { ok: false, error: 'no app connected or specified' });
       const result = await this.runner.start(app);
       this.json(res, result.ok ? 200 : 409, result);
@@ -270,10 +330,15 @@ export class CockpitServer {
     };
   }
 
+  /** App id from the SDK handshake, falling back to the CDP target (zero-config path). */
+  private connectedAppId(): string | null {
+    return this.sdkBridge.connectedApp ?? appFromTargetTitle(this.cm.currentTarget?.title);
+  }
+
   private baseState(): Record<string, unknown> {
     const { activities: _omit, ...agent } = this.runner.state;
     return {
-      app: this.sdkBridge.connectedApp,
+      app: this.connectedAppId(),
       sdkConnected: this.cm.sdkConnected,
       cdpConnected: this.cm.connected,
       listenerActive: this.cm.qaReportManager.isListenerActive(),
@@ -297,6 +362,12 @@ export class CockpitServer {
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(body));
   }
+}
+
+/** CDP target titles look like "in.janis.picking.beta (sdk_gphone16k_arm64)". */
+function appFromTargetTitle(title: string | undefined): string | null {
+  const candidate = title?.split(' ')[0]?.trim();
+  return candidate && /^[a-zA-Z][\w.]+$/.test(candidate) ? candidate : null;
 }
 
 async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {

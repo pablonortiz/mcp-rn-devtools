@@ -56,6 +56,62 @@ export async function reversePortsOnAllDevices(ports: number[]): Promise<void> {
   }
 }
 
+const MAX_PNG_BYTES = 20 * 1024 * 1024;
+
+/** Captures the first device's screen as a PNG buffer (null when unavailable). */
+export async function captureScreenPng(): Promise<Buffer | null> {
+  const adb = findAdb();
+  try {
+    const device = await firstDevice(adb);
+    if (!device) return null;
+    const { stdout } = await execFileAsync(adb, ['-s', device, 'exec-out', 'screencap', '-p'], {
+      encoding: 'buffer',
+      maxBuffer: MAX_PNG_BYTES,
+      timeout: ADB_TIMEOUT_MS,
+    });
+    return stdout && stdout.length > 0 ? (stdout as unknown as Buffer) : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface DeviceScreenInfo {
+  widthPx: number;
+  heightPx: number;
+  density: number;
+}
+
+/** Screen size and density of the first device (for px↔dp mapping). */
+export async function getDeviceScreenInfo(): Promise<DeviceScreenInfo | null> {
+  const adb = findAdb();
+  try {
+    const device = await firstDevice(adb);
+    if (!device) return null;
+    const size = (await execFileAsync(adb, ['-s', device, 'shell', 'wm', 'size'], { timeout: ADB_TIMEOUT_MS })).stdout;
+    const density = (await execFileAsync(adb, ['-s', device, 'shell', 'wm', 'density'], { timeout: ADB_TIMEOUT_MS })).stdout;
+
+    // Override lines (when present) come after Physical and win
+    const sizeMatch = lastMatch(size, /(?:Override|Physical) size:\s*(\d+)x(\d+)/g);
+    const densityMatch = lastMatch(density, /(?:Override|Physical) density:\s*(\d+)/g);
+    if (!sizeMatch || !densityMatch) return null;
+
+    return {
+      widthPx: parseInt(sizeMatch[1], 10),
+      heightPx: parseInt(sizeMatch[2], 10),
+      density: parseInt(densityMatch[1], 10),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function lastMatch(text: string, pattern: RegExp): RegExpExecArray | null {
+  let match: RegExpExecArray | null = null;
+  let current: RegExpExecArray | null;
+  while ((current = pattern.exec(text)) !== null) match = current;
+  return match;
+}
+
 /** Force-stops and relaunches an app by package id — a reliable full JS reload. */
 export async function relaunchApp(packageId: string): Promise<boolean> {
   const adb = findAdb();

@@ -138,6 +138,57 @@ export class AgentBridge {
     return { done: true, ok: false, error: `storage ${op} timed out after ${timeoutMs}ms` };
   }
 
+  /**
+   * Hit-tests the app's view tree at a point (dp) via the injected agent —
+   * zero-config element inspection for the cockpit's "Marcar" mode.
+   */
+  async qaHitTest(
+    cdp: CDPConnection,
+    x: number,
+    y: number,
+    timeoutMs: number = 4000,
+  ): Promise<AgentStorageResult> {
+    const id = `qa-hit-${Date.now()}-${++this.requestCounter}`;
+    const kick = await this.agentEval(
+      cdp,
+      `a.qaHitTestKick(${JSON.stringify(id)}, ${Number(x)}, ${Number(y)})`,
+    );
+    if (kick === null) return { done: true, ok: false, error: 'agent not available' };
+    return this.pollResult(cdp, id, timeoutMs, 'qa hit-test');
+  }
+
+  /** Measures another hierarchy level from the last qaHitTest (◀▶ navigation). */
+  async qaMeasureLevel(
+    cdp: CDPConnection,
+    index: number,
+    timeoutMs: number = 3000,
+  ): Promise<AgentStorageResult> {
+    const id = `qa-level-${Date.now()}-${++this.requestCounter}`;
+    const kick = await this.agentEval(
+      cdp,
+      `a.qaMeasureLevelKick(${JSON.stringify(id)}, ${Number(index)})`,
+    );
+    if (kick === null) return { done: true, ok: false, error: 'agent not available' };
+    return this.pollResult(cdp, id, timeoutMs, 'qa level measure');
+  }
+
+  private async pollResult(
+    cdp: CDPConnection,
+    id: string,
+    timeoutMs: number,
+    label: string,
+  ): Promise<AgentStorageResult> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 120));
+      const json = await this.agentEval(cdp, `a.readResultJson(${JSON.stringify(id)})`);
+      if (!json) continue;
+      const result = JSON.parse(json) as AgentStorageResult;
+      if (result.done) return result;
+    }
+    return { done: true, ok: false, error: `${label} timed out after ${timeoutMs}ms` };
+  }
+
   /** Runs discovery if no stores are registered yet (app may render after connect). */
   private async ensureDiscovered(cdp: CDPConnection): Promise<void> {
     const summary = await this.summary(cdp);

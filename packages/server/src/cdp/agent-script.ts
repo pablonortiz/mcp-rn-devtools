@@ -14,18 +14,22 @@ export const AGENT_GLOBAL_KEY = '__RN_DEVTOOLS_AGENT__';
 export const AGENT_SCRIPT = `
 (function() {
   var g = (typeof globalThis !== 'undefined' ? globalThis : global);
-  if (g.${AGENT_GLOBAL_KEY}) return 'already-installed';
+  // Reinstall over older agents so new capabilities (qa hit-testing) land on reconnect
+  var old = g.${AGENT_GLOBAL_KEY};
+  if (old && old.version >= 2) return 'already-installed';
 
   var MAX_ACTIONS = 500;
 
+  // Inherit wrapped stores/actions by reference: the old dispatch wrappers keep
+  // pushing into the same arrays, so nothing recorded is lost on reinstall.
   var agent = {
-    version: 1,
-    stores: {},
-    queryClient: null,
-    navigation: null,
-    actions: [],
+    version: 2,
+    stores: (old && old.stores) || {},
+    queryClient: (old && old.queryClient) || null,
+    navigation: (old && old.navigation) || null,
+    actions: (old && old.actions) || [],
     results: {},
-    actionCounter: 0
+    actionCounter: (old && old.actionCounter) || 0
   };
 
   function isStore(v) {
@@ -265,6 +269,140 @@ export const AGENT_SCRIPT = `
     if (!r) return JSON.stringify({ done: false });
     if (r.done) delete agent.results[id];
     return JSON.stringify(r);
+  };
+
+  // ---- QA hit-testing (zero-config element inspection for the cockpit) ----
+
+  agent.qaHierarchy = null;
+
+  function flattenStyle(st) {
+    if (!st) return null;
+    if (Array.isArray(st)) {
+      var out = {};
+      for (var i = 0; i < st.length; i++) {
+        var f = flattenStyle(st[i]);
+        if (f) { for (var k in f) out[k] = f[k]; }
+      }
+      return out;
+    }
+    if (typeof st === 'object') return st;
+    return null;
+  }
+
+  function firstHostInstance() {
+    var hook = g.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+    if (!hook || typeof hook.getFiberRoots !== 'function') return null;
+    var ids = [];
+    if (hook.renderers && hook.renderers.forEach) hook.renderers.forEach(function(_, id) { ids.push(id); });
+    for (var i = 0; i < ids.length; i++) {
+      var roots = [];
+      try { hook.getFiberRoots(ids[i]).forEach(function(r) { roots.push(r); }); } catch (e) {}
+      for (var j = 0; j < roots.length; j++) {
+        var f = roots[j].current;
+        var guard = 0;
+        while (f && guard++ < 200) {
+          if (typeof f.type === 'string' && f.stateNode) {
+            var sn = f.stateNode;
+            if (sn.canonical) return sn.canonical.publicInstance || sn.canonical;
+            return sn;
+          }
+          f = f.child;
+        }
+      }
+    }
+    return null;
+  }
+
+  function levelData(item) {
+    var dummyFindNodeHandle = function() { return null; };
+    return item.getInspectorData(dummyFindNodeHandle);
+  }
+
+  function serializeLevel(data) {
+    var props = {};
+    try {
+      var raw = data.props || {};
+      var keys = Object.keys(raw);
+      for (var i = 0; i < keys.length; i++) {
+        if (keys[i] !== 'children' && keys[i] !== 'style') props[keys[i]] = raw[keys[i]];
+      }
+    } catch (e) {}
+    var style = null;
+    try { style = flattenStyle(data.props && data.props.style); } catch (e2) {}
+    return { props: prune(props, 2), style: prune(style, 2) };
+  }
+
+  agent.qaHitTestKick = function(id, x, y) {
+    var done = function(ok, val, err) {
+      agent.results[id] = { done: true, ok: ok, value: val === undefined ? null : val, error: err || null };
+    };
+    var hook = g.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+    if (!hook || !hook.renderers) { done(false, null, 'devtools hook not found'); return 'no-hook'; }
+    var inspectedView = firstHostInstance();
+    if (!inspectedView) { done(false, null, 'no host instance found (app not mounted?)'); return 'no-host'; }
+
+    var renderers = [];
+    hook.renderers.forEach(function(r) { renderers.push(r); });
+    var handled = false;
+
+    for (var i = 0; i < renderers.length && !handled; i++) {
+      var inspect = renderers[i].rendererConfig && renderers[i].rendererConfig.getInspectorDataForViewAtPoint;
+      if (!inspect) continue;
+      try {
+        inspect(inspectedView, x, y, function(viewData) {
+          if (!viewData || !viewData.hierarchy || viewData.hierarchy.length === 0) return false;
+          handled = true;
+          agent.qaHierarchy = viewData.hierarchy;
+          var names = [];
+          for (var n = 0; n < viewData.hierarchy.length; n++) names.push(viewData.hierarchy[n].name || 'Unknown');
+          var selectedIndex = viewData.selectedIndex != null ? viewData.selectedIndex : names.length - 1;
+          var level = {};
+          try { level = serializeLevel(levelData(viewData.hierarchy[selectedIndex])); } catch (e) {}
+          done(true, {
+            frame: viewData.frame,
+            hierarchy: names,
+            selectedIndex: selectedIndex,
+            selectedName: names[selectedIndex],
+            componentStack: String(viewData.componentStack || '').slice(0, 4000),
+            props: level.props || {},
+            style: level.style || null
+          });
+          return true;
+        });
+      } catch (e) {
+        if (!handled) done(false, null, 'hit-test failed: ' + String(e));
+        return 'error';
+      }
+    }
+    if (!handled && !agent.results[id]) done(false, null, 'no renderer answered at that point');
+    return 'kicked';
+  };
+
+  agent.qaMeasureLevelKick = function(id, index) {
+    var done = function(ok, val, err) {
+      agent.results[id] = { done: true, ok: ok, value: val === undefined ? null : val, error: err || null };
+    };
+    if (!agent.qaHierarchy || !agent.qaHierarchy[index]) { done(false, null, 'no hit-test in progress or bad index'); return 'no-hierarchy'; }
+    try {
+      var data = levelData(agent.qaHierarchy[index]);
+      var level = serializeLevel(data);
+      var finished = false;
+      data.measure(function(mx, my, width, height, left, top) {
+        finished = true;
+        done(true, {
+          frame: { top: top, left: left, width: width, height: height },
+          name: agent.qaHierarchy[index].name || 'Unknown',
+          props: level.props,
+          style: level.style
+        });
+      });
+      setTimeout(function() {
+        if (!finished) done(true, { frame: null, name: agent.qaHierarchy[index].name || 'Unknown', props: level.props, style: level.style });
+      }, 400);
+    } catch (e) {
+      done(false, null, String(e));
+    }
+    return 'kicked';
   };
 
   g.${AGENT_GLOBAL_KEY} = agent;

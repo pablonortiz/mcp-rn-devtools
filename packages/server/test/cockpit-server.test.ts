@@ -64,7 +64,12 @@ describe('CockpitServer', () => {
     baseDir = await mkdtemp(path.join(tmpdir(), 'qa-cockpit-'));
     process.env.RN_QA_REPORTS_DIR = baseDir;
     cm = makeConnectionManager();
-    const sdkBridge = { connectedApp: 'in.janis.picking.beta', yielded: false } as SDKBridgeServer;
+    const sdkBridge = {
+      connectedApp: 'in.janis.picking.beta',
+      yielded: false,
+      getNavigationState: vi.fn().mockResolvedValue({ currentRoute: { name: 'Home' } }),
+      getAppState: vi.fn().mockResolvedValue(null),
+    } as unknown as SDKBridgeServer;
     cockpit = new CockpitServer(cm, sdkBridge, new QAAgentRunner(cm));
     cockpit.start(0);
     await vi.waitFor(() => {
@@ -141,6 +146,58 @@ describe('CockpitServer', () => {
     });
     expect((await response.json())).toMatchObject({ ok: true, status: 'resolved' });
     expect((await cm.qaReportManager.get(captured.id))?.resolution).toBe('width 100% aplicado');
+  });
+
+  it('inspect endpoints answer 503 without a CDP connection', async () => {
+    const inspect = await fetch(`${baseUrl}/api/inspect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ x: 10, y: 20 }),
+    });
+    expect(inspect.status).toBe(503);
+    expect((await inspect.json()).error).toContain('CDP not connected');
+
+    const level = await fetch(`${baseUrl}/api/inspect/level`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index: 1 }),
+    });
+    expect(level.status).toBe(503);
+  });
+
+  it('creates a report from the cockpit mark mode (POST /api/reports)', async () => {
+    const response = await fetch(`${baseUrl}/api/reports`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        note: 'La card marcada desde el cockpit',
+        mode: 'queue',
+        element: {
+          frame: { top: 10, left: 10, width: 100, height: 40 },
+          hierarchy: ['App', 'Home', 'Card'],
+          selectedIndex: 2,
+          selectedName: 'Card',
+          componentStack: 'at Card',
+          props: {},
+          style: { borderRadius: 8 },
+        },
+        screen: { width: 411, height: 914, scale: 2.625 },
+      }),
+    });
+    const created = await response.json();
+    expect(created.ok).toBe(true);
+
+    const report = await cm.qaReportManager.get(created.id);
+    expect(report?.app).toBe('in.janis.picking.beta');
+    expect(report?.note).toBe('La card marcada desde el cockpit');
+    expect(report?.element.source).toBeNull();
+
+    const invalid = await fetch(`${baseUrl}/api/reports`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note: '', mode: 'queue' }),
+    });
+    expect(invalid.status).toBe(400);
   });
 
   it('serves a full report by id and 404s unknown ids', async () => {
