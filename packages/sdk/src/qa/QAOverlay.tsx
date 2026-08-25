@@ -121,8 +121,32 @@ export function QAOverlay({ inspectedViewRef }: QAOverlayProps) {
     });
   };
 
+  const handleFixPending = () => {
+    if (!client) return;
+    reset();
+    const messageId = uuid();
+    client.send({ type: 'qa:fix-pending', payload: {}, timestamp: Date.now(), id: messageId });
+    void awaitFixPendingAck(client, messageId).then((ack) => {
+      if (!ack) {
+        setToast({ kind: 'warn', text: '⚠ Enviado, sin confirmación del server' });
+      } else if (!ack.agentRunning) {
+        setToast({ kind: 'queued', text: '⏸ El agente está apagado — inicialo en el cockpit' });
+      } else if (ack.queued === 0) {
+        setToast({ kind: 'listening', text: 'No hay reports pendientes' });
+      } else {
+        setToast({ kind: 'listening', text: `🤖 ${ack.queued} pendiente(s) enviados a Claude` });
+      }
+    });
+  };
+
   if (phase === 'selecting') {
-    return <SelectionLayer onSelectPoint={handleSelectPoint} onCancel={reset} />;
+    return (
+      <SelectionLayer
+        onSelectPoint={handleSelectPoint}
+        onFixPending={handleFixPending}
+        onCancel={reset}
+      />
+    );
   }
 
   if (phase === 'inspecting') {
@@ -166,10 +190,23 @@ interface AckPayload {
 const ACK_TIMEOUT_MS = 3000;
 
 function awaitAck(client: WSClient, requestId: string): Promise<AckPayload | null> {
+  return awaitAckOfType<AckPayload>(client, 'qa:report:ack', requestId);
+}
+
+interface FixPendingAckPayload {
+  queued: number;
+  agentRunning: boolean;
+}
+
+function awaitFixPendingAck(client: WSClient, requestId: string): Promise<FixPendingAckPayload | null> {
+  return awaitAckOfType<FixPendingAckPayload>(client, 'qa:fix-pending:ack', requestId);
+}
+
+function awaitAckOfType<T>(client: WSClient, type: string, requestId: string): Promise<T | null> {
   return new Promise((resolve) => {
     const unsubscribe = client.onMessage((msg) => {
-      if (msg.type !== 'qa:report:ack') return;
-      const payload = msg.payload as unknown as { requestId?: string } & AckPayload;
+      if (msg.type !== type) return;
+      const payload = msg.payload as unknown as { requestId?: string } & T;
       if (payload.requestId !== requestId) return;
       clearTimeout(timer);
       unsubscribe();

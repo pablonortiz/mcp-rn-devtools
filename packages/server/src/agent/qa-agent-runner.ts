@@ -53,6 +53,7 @@ export class QAAgentRunner extends EventEmitter {
   private repo: string | null = null;
   private sessionId: string | null = null;
   private queue: QueueItem[] = [];
+  private currentReportId: string | null = null;
   private child: ChildProcess | null = null;
   private presenceTimer: ReturnType<typeof setInterval> | null = null;
   private activities: AgentActivity[] = [];
@@ -143,11 +144,34 @@ export class QAAgentRunner extends EventEmitter {
     return { ok: true };
   }
 
+  /** Queues every pending report of the agent's app (skipping queued/in-flight ones). */
+  async enqueuePendingAll(): Promise<{ ok: boolean; queued: number; error?: string }> {
+    if (this.status === 'off') return { ok: false, queued: 0, error: 'agent is off' };
+
+    const pending = await this.cm.qaReportManager.list('pending', this.app!);
+    const alreadyQueued = new Set(
+      this.queue
+        .filter((item): item is { kind: 'report'; report: QAReport } => item.kind === 'report')
+        .map((item) => item.report.id),
+    );
+    if (this.currentReportId) alreadyQueued.add(this.currentReportId);
+
+    const fresh = pending.filter((report) => !alreadyQueued.has(report.id));
+    for (const report of fresh) this.queue.push({ kind: 'report', report });
+    if (fresh.length > 0) {
+      this.pushActivity('info', `${fresh.length} pendiente(s) encolados para corregir`);
+      this.emitStatus();
+      void this.pump();
+    }
+    return { ok: true, queued: fresh.length };
+  }
+
   private async pump(): Promise<void> {
     if (this.status !== 'waiting' || this.queue.length === 0) return;
 
     const item = this.queue.shift()!;
     this.status = 'processing';
+    this.currentReportId = item.kind === 'report' ? item.report.id : null;
     this.emitStatus();
 
     const label = item.kind === 'report' ? `report ${item.report.id}` : 'mensaje del tester';
@@ -163,6 +187,7 @@ export class QAAgentRunner extends EventEmitter {
       this.pushActivity('error', `Turno falló: ${(e as Error).message}`);
     }
 
+    this.currentReportId = null;
     // stop() may have flipped the status while the turn was awaited
     if ((this.status as AgentStatus) !== 'off') {
       this.status = 'waiting';

@@ -81,6 +81,7 @@
   .agent-btn { font-size: 12px; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); cursor: pointer; font-weight: 700; }
   #agent-start { background: rgba(52,211,153,.15); color: var(--ok); border-color: rgba(52,211,153,.4); }
   #agent-stop { background: rgba(248,113,113,.12); color: var(--err); border-color: rgba(248,113,113,.35); display: none; }
+  #agent-fix-all { background: rgba(251,146,60,.12); color: var(--fix); border-color: rgba(251,146,60,.4); }
   #agent-config { display: none; padding: 10px 14px; border-bottom: 1px solid var(--border); }
   #agent-config label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 4px; }
   .config-row { display: flex; gap: 8px; }
@@ -121,6 +122,7 @@
     <div class="agent-head">
       <span class="status-dot" id="agent-dot">⏻</span>
       <span class="status-text" id="agent-status-text">Agente apagado <span class="status-sub" id="agent-status-sub"></span></span>
+      <button class="agent-btn" id="agent-fix-all" style="display:none">🤖 Corregir pendientes</button>
       <button class="agent-btn" id="agent-start">▶ Start QA session</button>
       <button class="agent-btn" id="agent-stop">■ Stop</button>
     </div>
@@ -196,6 +198,14 @@
     el('agent-stop').style.display = agent.status === 'off' ? 'none' : '';
     el('agent-input').disabled = agent.status === 'off';
     el('agent-send').disabled = agent.status === 'off';
+    updateFixAllButton();
+  }
+
+  function updateFixAllButton() {
+    const pendingCount = [...reports.values()].filter((summary) => summary.status === 'pending').length;
+    const button = el('agent-fix-all');
+    button.style.display = agentOn && pendingCount > 0 ? '' : 'none';
+    button.textContent = `🤖 Corregir pendientes (${pendingCount})`;
   }
 
   function pushActivity(activity) {
@@ -232,6 +242,11 @@
 
   el('agent-start').addEventListener('click', startAgent);
   el('agent-stop').addEventListener('click', () => fetch('/api/agent/stop', { method: 'POST' }));
+  el('agent-fix-all').addEventListener('click', async () => {
+    el('agent-fix-all').disabled = true;
+    await fetch('/api/agent/fix-pending', { method: 'POST' });
+    setTimeout(() => { el('agent-fix-all').disabled = false; }, 1500);
+  });
   el('config-save').addEventListener('click', async () => {
     const repo = el('repo-input').value.trim();
     if (!repo || !connectedApp) return;
@@ -344,6 +359,7 @@
       if (empty) empty.remove();
       list.prepend(card);
     }
+    updateFixAllButton();
   }
 
   function renderAll(snapshot) {

@@ -134,6 +134,23 @@ export interface QAReportAckMessage extends SDKMessage {
   };
 }
 
+// "Fix everything pending" requested from the on-device overlay (SDK → Server)
+export interface QAFixPendingMessage extends SDKMessage {
+  type: 'qa:fix-pending';
+  payload: Record<string, never>;
+}
+
+export interface QAFixPendingAckMessage extends SDKMessage {
+  type: 'qa:fix-pending:ack';
+  payload: {
+    requestId: string;
+    /** How many pending reports were queued for the agent. */
+    queued: number;
+    /** False when the cockpit agent is off (nothing could be queued). */
+    agentRunning: boolean;
+  };
+}
+
 // Server → SDK messages
 export interface HandshakeAckMessage extends SDKMessage {
   type: 'handshake:ack';
@@ -192,7 +209,8 @@ export type SDKToServerMessage =
   | StorageKeysMessage
   | StorageValueMessage
   | ReduxActionMessage
-  | QAReportMessage;
+  | QAReportMessage
+  | QAFixPendingMessage;
 
 export type ServerToSDKMessage =
   | HandshakeAckMessage
@@ -201,4 +219,5 @@ export type ServerToSDKMessage =
   | RequestStateMessage
   | RequestStorageKeysMessage
   | RequestStorageValueMessage
-  | QAReportAckMessage;
+  | QAReportAckMessage
+  | QAFixPendingAckMessage;

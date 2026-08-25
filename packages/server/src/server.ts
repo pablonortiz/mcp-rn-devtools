@@ -29,6 +29,7 @@ export function createServer(options: ServerOptions = {}) {
   const connectionManager = new ConnectionManager(options.metroPort);
   const sdkBridge = new SDKBridgeServer(connectionManager);
   const agentRunner = new QAAgentRunner(connectionManager);
+  sdkBridge.setAgentRunner(agentRunner);
   const cockpit = new CockpitServer(connectionManager, sdkBridge, agentRunner);
 
   registerAllTools(mcpServer, connectionManager, sdkBridge);

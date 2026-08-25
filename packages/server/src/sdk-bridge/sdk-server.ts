@@ -14,6 +14,7 @@ import type {
   ReduxActionMessage,
 } from '@mcp-rn-devtools/shared';
 import type { ConnectionManager } from '../managers/connection-manager.js';
+import type { QAAgentRunner } from '../agent/qa-agent-runner.js';
 import { logger } from '../utils/logger.js';
 import { SERVER_VERSION } from '../utils/version.js';
 
@@ -27,8 +28,14 @@ export class SDKBridgeServer {
   private _portConflict = false;
   private _yielded = false;
   private takeoverAttempted = false;
+  private agentRunner: QAAgentRunner | null = null;
 
   constructor(private connectionManager: ConnectionManager) {}
+
+  /** Wires the cockpit's fix agent so on-device "fix pending" requests reach it. */
+  setAgentRunner(runner: QAAgentRunner): void {
+    this.agentRunner = runner;
+  }
 
   /** True when the SDK port was already taken — another server instance is running. */
   get portConflict(): boolean {
@@ -280,6 +287,22 @@ export class SDKBridgeServer {
           getNavigationState: () => this.getNavigationState(),
           getAppState: () => this.getAppState(),
         }).catch((e) => logger.error('Failed to capture QA report', (e as Error).message));
+        break;
+      }
+
+      case 'qa:fix-pending': {
+        const requestId = msg.id;
+        void (async () => {
+          const result = this.agentRunner
+            ? await this.agentRunner.enqueuePendingAll()
+            : { ok: false, queued: 0 };
+          this.sendToClient({
+            type: 'qa:fix-pending:ack',
+            payload: { requestId, queued: result.queued, agentRunning: result.ok },
+            timestamp: Date.now(),
+            id: `qa-fix-ack-${Date.now()}`,
+          });
+        })();
         break;
       }
 

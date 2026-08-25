@@ -240,4 +240,26 @@ describe('QAAgentRunner', () => {
     const prompt = await promptPromise;
     expect(prompt).toContain('lo guardo para después');
   });
+
+  it('enqueuePendingAll queues every pending report of the app once', async () => {
+    await writeConfig(baseDir, { apps: { [APP]: repoDir } });
+    await cm.qaReportManager.capture({ ...makePayload('primero'), mode: 'queue' }, APP, enricher);
+    await cm.qaReportManager.capture({ ...makePayload('segundo'), mode: 'queue' }, APP, enricher);
+    await cm.qaReportManager.capture({ ...makePayload('de otra app'), mode: 'queue' }, 'in.janis.wms.beta', enricher);
+
+    expect((await runner.enqueuePendingAll()).ok).toBe(false); // agente apagado
+
+    await runner.start(APP);
+    const firstChild = new FakeChild();
+    const secondChild = new FakeChild();
+    spawnMock.mockReturnValueOnce(firstChild).mockReturnValueOnce(secondChild);
+    const firstPrompt = scriptTurn(firstChild, 'sess-3', 'ok');
+    const secondPrompt = scriptTurn(secondChild, 'sess-3', 'ok');
+
+    const result = await runner.enqueuePendingAll();
+    expect(result).toMatchObject({ ok: true, queued: 2 });
+
+    expect(await firstPrompt).toContain('primero');
+    expect(await secondPrompt).toContain('segundo');
+  });
 });

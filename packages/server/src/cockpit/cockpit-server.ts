@@ -218,6 +218,12 @@ export class CockpitServer {
       return;
     }
 
+    if (url.pathname === '/api/agent/fix-pending' && req.method === 'POST') {
+      const result = await this.runner.enqueuePendingAll();
+      this.json(res, result.ok ? 200 : 409, result);
+      return;
+    }
+
     if (url.pathname === '/api/agent/send' && req.method === 'POST') {
       const body = await readBody(req);
       if (typeof body.text !== 'string' || !body.text.trim()) {
