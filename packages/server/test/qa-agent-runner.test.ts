@@ -219,4 +219,25 @@ describe('QAAgentRunner', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(spawnMock).not.toHaveBeenCalled();
   });
+
+  it('saved reports (mode queue) are NOT auto-processed, but enqueueReport runs them on demand', async () => {
+    await writeConfig(baseDir, { apps: { [APP]: repoDir } });
+    await runner.start(APP);
+
+    const saved = await cm.qaReportManager.capture(
+      { ...makePayload('lo guardo para después'), mode: 'queue' },
+      APP,
+      enricher,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(runner.state.activities.some((activity) => activity.text.includes('guardado'))).toBe(true);
+
+    const child = new FakeChild();
+    spawnMock.mockReturnValueOnce(child);
+    const promptPromise = scriptTurn(child, 'sess-2', 'hecho');
+    expect(runner.enqueueReport(saved).ok).toBe(true);
+    const prompt = await promptPromise;
+    expect(prompt).toContain('lo guardo para después');
+  });
 });

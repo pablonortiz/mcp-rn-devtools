@@ -176,6 +176,16 @@ export class CockpitServer {
       return;
     }
 
+    const fixMatch = url.pathname.match(/^\/api\/reports\/([^/]+)\/fix$/);
+    if (fixMatch && req.method === 'POST') {
+      const report = await this.cm.qaReportManager.get(fixMatch[1]);
+      if (!report) return this.json(res, 404, { ok: false, error: 'not found' });
+      if (report.status === 'resolved') return this.json(res, 409, { ok: false, error: 'already resolved' });
+      const result = this.runner.enqueueReport(report);
+      this.json(res, result.ok ? 200 : 409, result);
+      return;
+    }
+
     const resolveMatch = url.pathname.match(/^\/api\/reports\/([^/]+)\/resolve$/);
     if (resolveMatch && req.method === 'POST') {
       const body = await readBody(req);

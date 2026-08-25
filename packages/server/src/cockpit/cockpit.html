@@ -61,6 +61,8 @@
   .chip.mode-fix-now { color: var(--fix); border-color: rgba(251,146,60,.4); font-weight: 700; }
   .meta { font-size: 11px; color: var(--muted); }
   .resolution { font-size: 12px; color: var(--ok); background: rgba(52,211,153,.08); border-radius: 8px; padding: 6px 9px; }
+  .fix-btn { font-size: 11px; padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(251,146,60,.45); background: rgba(251,146,60,.12); color: var(--fix); cursor: pointer; font-weight: 700; }
+  .fix-btn:disabled { opacity: .4; cursor: default; }
   .detail { display: none; flex-direction: column; gap: 8px; }
   .card.expanded .detail { display: flex; }
   .card.expanded { flex-direction: column; }
@@ -176,8 +178,14 @@
     waiting: ['👂', 'Agente esperando reports'],
     processing: ['⚙️', 'Agente trabajando…'],
   };
+  let agentOn = false;
 
   function setAgentState(agent) {
+    const wasOn = agentOn;
+    agentOn = agent.status !== 'off';
+    if (wasOn !== agentOn) {
+      for (const summary of reports.values()) upsert(summary, false);
+    }
     const [dot, label] = AGENT_LABELS[agent.status] || AGENT_LABELS.off;
     el('agent-dot').textContent = dot;
     el('agent-status-text').childNodes[0].textContent = label + ' ';
@@ -293,12 +301,21 @@
           ${chip(summary.selectedName)}
           ${summary.route ? chip('📍 ' + summary.route) : ''}
           ${chip(summary.app)}
+          ${summary.status === 'pending' && agentOn ? `<button class="fix-btn" data-fix="${summary.id}">🤖 Corregir</button>` : ''}
         </div>
         ${summary.resolution ? `<div class="resolution">✔ ${escapeHtml(summary.resolution)}</div>` : ''}
         <div class="meta">${summary.id} · ${timeAgo(summary.createdAt)}</div>
         <div class="detail"><div class="hierarchy"></div></div>
       </div>`;
     card.addEventListener('click', () => toggleExpand(card, summary.id));
+    const fixButton = card.querySelector('.fix-btn');
+    if (fixButton) {
+      fixButton.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        fixButton.disabled = true;
+        await fetch(`/api/reports/${summary.id}/fix`, { method: 'POST' });
+      });
+    }
     return card;
   }
 

@@ -60,6 +60,11 @@ export class QAAgentRunner extends EventEmitter {
 
   private readonly onCaptured = (report: QAReport) => {
     if (this.status === 'off' || report.app !== this.app) return;
+    // "Guardar" (queue) means: keep testing, act later — only fix-now auto-runs
+    if (report.mode !== 'fix-now') {
+      this.pushActivity('info', `Report guardado (no se procesa ahora): ${report.id} — "${report.note.slice(0, 60)}"`);
+      return;
+    }
     this.queue.push({ kind: 'report', report });
     this.pushActivity('info', `Report en cola: ${report.id} — "${report.note.slice(0, 60)}"`);
     void this.pump();
@@ -124,6 +129,16 @@ export class QAAgentRunner extends EventEmitter {
   send(text: string): { ok: boolean; error?: string } {
     if (this.status === 'off') return { ok: false, error: 'agent is off' };
     this.queue.push({ kind: 'chat', text });
+    void this.pump();
+    return { ok: true };
+  }
+
+  /** Explicitly queue a saved (mode: queue) report for fixing — the cockpit's per-card button. */
+  enqueueReport(report: QAReport): { ok: boolean; error?: string } {
+    if (this.status === 'off') return { ok: false, error: 'agent is off' };
+    if (report.app !== this.app) return { ok: false, error: `agent is running for ${this.app}` };
+    this.queue.push({ kind: 'report', report });
+    this.pushActivity('info', `Report en cola (a pedido): ${report.id}`);
     void this.pump();
     return { ok: true };
   }

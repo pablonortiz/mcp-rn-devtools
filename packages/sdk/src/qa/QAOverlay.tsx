@@ -108,6 +108,8 @@ export function QAOverlay({ inspectedViewRef }: QAOverlayProps) {
     void awaitAck(client, messageId).then((ack) => {
       if (!ack) {
         setToast({ kind: 'warn', text: '⚠ Enviado, sin confirmación del server' });
+      } else if (mode === 'queue') {
+        setToast({ kind: 'listening', text: `💾 Guardado (${ack.pendingCount} pendientes) — seguí probando` });
       } else if (ack.listenerActive) {
         setToast({ kind: 'listening', text: '🤖 Claude lo está tomando' });
       } else {
