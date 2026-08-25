@@ -297,9 +297,15 @@ export class CockpitServer {
       const baseDir = this.cm.qaReportManager.baseDir;
       if (req.method === 'PUT') {
         const body = await readBody(req);
-        const apps = (body.apps ?? {}) as Record<string, string>;
-        await writeConfig(baseDir, { apps });
-        this.json(res, 200, { ok: true, apps });
+        const current = await readConfig(baseDir);
+        const config = {
+          apps: (body.apps as Record<string, string>) ?? current.apps,
+          agentModel:
+            body.agentModel !== undefined ? String(body.agentModel).trim() || undefined : current.agentModel,
+        };
+        await writeConfig(baseDir, config);
+        this.runner.setModel(config.agentModel ?? null);
+        this.json(res, 200, { ok: true, ...config });
         return;
       }
       this.json(res, 200, await readConfig(baseDir));

@@ -58,6 +58,7 @@ export class QAAgentRunner extends EventEmitter {
   private presenceTimer: ReturnType<typeof setInterval> | null = null;
   private activities: AgentActivity[] = [];
   private claudeBin: string | null = null;
+  private model: string | null = null;
 
   private readonly onCaptured = (report: QAReport) => {
     if (this.status === 'off' || report.app !== this.app) return;
@@ -81,9 +82,21 @@ export class QAAgentRunner extends EventEmitter {
       app: this.app,
       repo: this.repo,
       sessionId: this.sessionId,
+      model: this.model,
       queueLength: this.queue.length,
       activities: this.activities,
     };
+  }
+
+  /** Model for future turns (alias or full id); null/empty = the CLI default. */
+  setModel(model: string | null): void {
+    const normalized = model?.trim() || null;
+    if (normalized === this.model) return;
+    this.model = normalized;
+    if (this.status !== 'off') {
+      this.pushActivity('info', `Modelo del agente: ${normalized ?? 'default del CLI'}`);
+      this.emitStatus();
+    }
   }
 
   async start(app: string): Promise<{ ok: boolean; error?: string }> {
@@ -104,6 +117,7 @@ export class QAAgentRunner extends EventEmitter {
       return { ok: false, error: 'claude CLI not found in PATH (set QA_AGENT_CLAUDE_BIN)' };
     }
 
+    this.model = config.agentModel?.trim() || null;
     this.app = app;
     this.repo = repo;
     this.sessionId = null;
@@ -227,6 +241,7 @@ export class QAAgentRunner extends EventEmitter {
       '--allowedTools',
       ALLOWED_TOOLS,
     ];
+    if (this.model) args.push('--model', this.model);
     if (this.sessionId) args.push('--resume', this.sessionId);
 
     return new Promise((resolve, reject) => {

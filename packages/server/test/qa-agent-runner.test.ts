@@ -241,6 +241,24 @@ describe('QAAgentRunner', () => {
     expect(prompt).toContain('lo guardo para después');
   });
 
+  it('passes the configured model to claude and applies setModel changes', async () => {
+    await writeConfig(baseDir, { apps: { [APP]: repoDir }, agentModel: 'sonnet' });
+    await runner.start(APP);
+
+    const child = new FakeChild();
+    spawnMock.mockReturnValueOnce(child);
+    const prompt = scriptTurn(child, 'sess-m', 'ok');
+    await cm.qaReportManager.capture(makePayload('con modelo'), APP, enricher);
+    await prompt;
+
+    const [, args] = spawnMock.mock.calls[0];
+    expect(args).toContain('--model');
+    expect(args[args.indexOf('--model') + 1]).toBe('sonnet');
+
+    runner.setModel(null);
+    expect(runner.state.model).toBeNull();
+  });
+
   it('enqueuePendingAll queues every pending report of the app once', async () => {
     await writeConfig(baseDir, { apps: { [APP]: repoDir } });
     await cm.qaReportManager.capture({ ...makePayload('primero'), mode: 'queue' }, APP, enricher);
