@@ -1,10 +1,10 @@
+import { EventEmitter } from 'events';
 import { WebSocketServer, WebSocket } from 'ws';
 import { SDK_WS_PORT } from '@mcp-rn-devtools/shared';
 import type {
   SDKToServerMessage,
   NavigationState,
   NavigationStateMessage,
-  QAReportMessage,
   RenderProfileMessage,
   StateSnapshotMessage,
   StorageKeysMessage,
@@ -14,11 +14,15 @@ import type {
   ReduxActionMessage,
 } from '@mcp-rn-devtools/shared';
 import type { ConnectionManager } from '../managers/connection-manager.js';
-import type { QAAgentRunner } from '../agent/qa-agent-runner.js';
 import { logger } from '../utils/logger.js';
 import { SERVER_VERSION } from '../utils/version.js';
 
-export class SDKBridgeServer {
+/**
+ * Emits 'sdk-message' with any message type it does not handle itself, so
+ * extensions (e.g. tapfix's QA capture loop) can speak over the same channel;
+ * reply with sendToClient().
+ */
+export class SDKBridgeServer extends EventEmitter {
   private wss: WebSocketServer | null = null;
   private client: WebSocket | null = null;
   private _connectedApp: string | null = null;
@@ -28,13 +32,9 @@ export class SDKBridgeServer {
   private _portConflict = false;
   private _yielded = false;
   private takeoverAttempted = false;
-  private agentRunner: QAAgentRunner | null = null;
 
-  constructor(private connectionManager: ConnectionManager) {}
-
-  /** Wires the cockpit's fix agent so on-device "fix pending" requests reach it. */
-  setAgentRunner(runner: QAAgentRunner): void {
-    this.agentRunner = runner;
+  constructor(private connectionManager: ConnectionManager) {
+    super();
   }
 
   /** True when the SDK port was already taken — another server instance is running. */
@@ -264,53 +264,11 @@ export class SDKBridgeServer {
         break;
       }
 
-      case 'qa:report': {
-        const qaMsg = msg as QAReportMessage;
-        const qa = this.connectionManager.qaReportManager;
-
-        // Ack right away — before the slow enrichment — so the overlay can tell
-        // the tester whether an agent is actually listening for this report.
-        void qa.pendingCount().then((pending) => {
-          this.sendToClient({
-            type: 'qa:report:ack',
-            payload: {
-              requestId: qaMsg.id,
-              listenerActive: qa.isListenerActive(),
-              pendingCount: pending + 1,
-            },
-            timestamp: Date.now(),
-            id: `qa-ack-${Date.now()}`,
-          });
-        });
-
-        qa.capture(qaMsg.payload.report, this._connectedApp ?? 'unknown-app', {
-          getNavigationState: () => this.getNavigationState(),
-          getAppState: () => this.getAppState(),
-        }).catch((e) => logger.error('Failed to capture QA report', (e as Error).message));
-        break;
-      }
-
-      case 'qa:fix-pending': {
-        const requestId = msg.id;
-        void (async () => {
-          const result = this.agentRunner
-            ? await this.agentRunner.enqueuePendingAll()
-            : { ok: false, queued: 0 };
-          this.sendToClient({
-            type: 'qa:fix-pending:ack',
-            payload: { requestId, queued: result.queued, agentRunning: result.ok },
-            timestamp: Date.now(),
-            id: `qa-fix-ack-${Date.now()}`,
-          });
-        })();
-        break;
-      }
-
       case 'pong':
         break;
 
       default:
-        logger.debug('Unknown SDK message type:', (msg as SDKToServerMessage).type);
+        this.emit('sdk-message', msg);
     }
   }
 
@@ -406,7 +364,8 @@ export class SDKBridgeServer {
     });
   }
 
-  private sendToClient(msg: Record<string, unknown>): void {
+  /** Sends a message to the connected SDK client (public: extensions reply through here). */
+  sendToClient(msg: Record<string, unknown>): void {
     if (this.client?.readyState === WebSocket.OPEN) {
       this.client.send(JSON.stringify(msg));
     }

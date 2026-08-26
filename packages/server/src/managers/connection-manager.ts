@@ -15,7 +15,6 @@ import { StorageManager } from './storage-manager.js';
 import { SourceMapManager } from './sourcemap-manager.js';
 import { ActionManager } from './action-manager.js';
 import { NavigationTimingManager } from './navigation-timing-manager.js';
-import { QAReportManager } from './qa-report-manager.js';
 import { logger } from '../utils/logger.js';
 
 export class ConnectionManager extends EventEmitter {
@@ -31,7 +30,6 @@ export class ConnectionManager extends EventEmitter {
   readonly sourcemapManager: SourceMapManager;
   readonly actionManager = new ActionManager();
   readonly navigationTimingManager = new NavigationTimingManager();
-  readonly qaReportManager = new QAReportManager(this);
 
   private _metroPort: number;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;

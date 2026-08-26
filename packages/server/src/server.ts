@@ -1,8 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ConnectionManager } from './managers/connection-manager.js';
 import { SDKBridgeServer } from './sdk-bridge/sdk-server.js';
-import { CockpitServer } from './cockpit/cockpit-server.js';
-import { QAAgentRunner } from './agent/qa-agent-runner.js';
 import { registerAllTools } from './tools/index.js';
 import { reversePortsOnAllDevices } from './utils/adb.js';
 import { SERVER_VERSION } from './utils/version.js';
@@ -14,7 +12,6 @@ const ADB_REVERSE_INTERVAL_MS = 30_000;
 export interface ServerOptions {
   metroPort?: number;
   sdkPort?: number;
-  cockpitPort?: number;
 }
 
 export function createServer(options: ServerOptions = {}) {
@@ -32,9 +29,6 @@ export function createServer(options: ServerOptions = {}) {
 
   const connectionManager = new ConnectionManager(options.metroPort);
   const sdkBridge = new SDKBridgeServer(connectionManager);
-  const agentRunner = new QAAgentRunner(connectionManager);
-  sdkBridge.setAgentRunner(agentRunner);
-  const cockpit = new CockpitServer(connectionManager, sdkBridge, agentRunner);
 
   registerAllTools(mcpServer, connectionManager, sdkBridge);
 
@@ -42,15 +36,10 @@ export function createServer(options: ServerOptions = {}) {
     mcpServer,
     connectionManager,
     sdkBridge,
-    cockpit,
-    agentRunner,
 
     async start() {
       // Start SDK bridge server
       sdkBridge.start(options.sdkPort);
-
-      // QA Cockpit: local web UI for the capture loop
-      cockpit.start(options.cockpitPort);
 
       // Physical devices over USB reach Metro + SDK bridge via adb reverse —
       // applied automatically so plugging a phone in mid-session just works.
@@ -66,10 +55,8 @@ export function createServer(options: ServerOptions = {}) {
     },
 
     shutdown() {
-      agentRunner.stop();
       connectionManager.shutdown();
       sdkBridge.stop();
-      cockpit.stop();
     },
   };
 }

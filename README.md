@@ -153,16 +153,11 @@ npm install -g mcp-rn-devtools
 | `evaluate_js` | CDP | Execute JavaScript in the app's global scope |
 | `resolve_source_location` | CDP | Resolve bundled line:column to original source via Metro source maps |
 
-### QA Capture Loop
+### Building on top of the core
 
-| Tool | Source | Description |
-|------|--------|-------------|
-| `qa_list_reports` | SDK | List issues reported from the on-device QA overlay (pending/resolved queue) |
-| `qa_get_report` | SDK | One report with full context: note, selected element, navigation, state, recent activity, screenshot path |
-| `qa_wait_for_report` | SDK | Block until the next report arrives — live-fix mode while someone tests on the device |
-| `qa_resolve_report` | — | Mark a report as resolved after acting on it |
+The server exports its building blocks (`ConnectionManager`, `SDKBridgeServer`, the injected agent bridge, adb helpers) so tools can extend it **in the same process** — Hermes admits a single debugger, so extensions must share the CDP session rather than compete for it. Unrecognized SDK-channel messages are re-emitted as `sdk-message` events, and `sendToClient()` lets extensions answer.
 
-The overlay ships with the SDK: mount `<RNDevtoolsProvider qaOverlay>` and a draggable **QA** button appears in dev builds. Tap it, tap any element on screen (selection snaps to the real view, with hierarchy navigation), write a note, and choose **save for later** or **fix now**. The server enriches each report with navigation state, app state, recent actions/network/logs/errors and an `adb` screenshot, then persists it to `.qa-reports/pending/<id>/` — ready for a coding agent to pick up, fix, and resolve.
+The first product built this way is [**tapfix**](https://www.npmjs.com/package/tapfix): a live QA loop for React Native (mark issues on-device or from a cockpit web UI, and an embedded coding agent fixes them on the fly). Its MCP server is a superset of this one.
 
 ## Secret Redaction
 

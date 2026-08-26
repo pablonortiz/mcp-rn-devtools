@@ -1,5 +1,4 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { QA_COCKPIT_PORT } from '@mcp-rn-devtools/shared';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 import type { SDKBridgeServer } from '../sdk-bridge/sdk-server.js';
 import { probeMetro } from '../cdp/discovery.js';
@@ -19,7 +18,6 @@ export function registerHealthCheck(
       const lines: string[] = [
         `CDP Connected: ${cm.connected ? 'Yes' : 'No'}${cm.currentTarget ? ` — ${cm.currentTarget.title} (${cm.currentTarget.id})` : ''}`,
         `SDK Connected: ${cm.sdkConnected ? 'Yes' : 'No'}${sdkBridge.connectedApp ? ` — app: ${sdkBridge.connectedApp}` : ''}`,
-        `QA Cockpit: http://localhost:${QA_COCKPIT_PORT} (${(await cm.qaReportManager.list('pending')).length} pending reports)`,
         `Redaction: ${redactionEnabled() ? 'on' : 'OFF (MCP_RN_NO_REDACT=1)'}`,
         `Uptime: ${Math.round(cm.uptime / 1000)}s`,
       ];
