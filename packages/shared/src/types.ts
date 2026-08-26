@@ -188,6 +188,12 @@ export interface QAReport {
   screenshot: string | null;
   /** Filled by qa_resolve_report: what was done about it. */
   resolution?: string;
+  /** Repo-relative files the fix agent touched for this report. */
+  fixedFiles?: string[];
+  /** Screenshot taken after the fix + reload, inside the report directory. */
+  afterScreenshot?: string | null;
+  /** True when the fix was reverted from the cockpit. */
+  reverted?: boolean;
 }
 
 // Phase 5d: Storage

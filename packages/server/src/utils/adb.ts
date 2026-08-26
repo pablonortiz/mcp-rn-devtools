@@ -20,13 +20,33 @@ export function findAdb(): string {
   return 'adb'; // last resort: rely on PATH; execFile will fail gracefully
 }
 
-export async function firstDevice(adb: string): Promise<string | null> {
-  const { stdout } = await execFileAsync(adb, ['devices'], { timeout: ADB_TIMEOUT_MS });
-  const line = stdout
-    .split('\n')
-    .slice(1)
-    .find((row) => row.trim().endsWith('device'));
-  return line ? line.split('\t')[0].trim() : null;
+export async function firstDevice(): Promise<string | null> {
+  const devices = await listDevices();
+  return devices[0]?.id ?? null;
+}
+
+export interface AdbDevice {
+  id: string;
+  model: string | null;
+}
+
+/** Connected devices (state "device") with their model names. */
+export async function listDevices(): Promise<AdbDevice[]> {
+  const adb = findAdb();
+  try {
+    const { stdout } = await execFileAsync(adb, ['devices', '-l'], { timeout: ADB_TIMEOUT_MS });
+    return stdout
+      .split('\n')
+      .slice(1)
+      .filter((row) => /\sdevice(\s|$)/.test(row.trim()))
+      .map((row) => ({
+        id: row.split(/\s+/)[0].trim(),
+        model: row.match(/model:(\S+)/)?.[1]?.replace(/_/g, ' ') ?? null,
+      }))
+      .filter((device) => device.id.length > 0);
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -60,10 +80,10 @@ const MAX_PNG_BYTES = 20 * 1024 * 1024;
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 /** Captures the first device's screen as a PNG buffer (null when unavailable). */
-export async function captureScreenPng(): Promise<Buffer | null> {
+export async function captureScreenPng(preferredDevice?: string): Promise<Buffer | null> {
   const adb = findAdb();
   try {
-    const device = await firstDevice(adb);
+    const device = preferredDevice ?? (await firstDevice());
     if (!device) return null;
     const { stdout } = await execFileAsync(adb, ['-s', device, 'exec-out', 'screencap', '-p'], {
       encoding: 'buffer',
@@ -90,10 +110,10 @@ export interface DeviceScreenInfo {
 }
 
 /** Screen size and density of the first device (for px↔dp mapping). */
-export async function getDeviceScreenInfo(): Promise<DeviceScreenInfo | null> {
+export async function getDeviceScreenInfo(preferredDevice?: string): Promise<DeviceScreenInfo | null> {
   const adb = findAdb();
   try {
-    const device = await firstDevice(adb);
+    const device = preferredDevice ?? (await firstDevice());
     if (!device) return null;
     const size = (await execFileAsync(adb, ['-s', device, 'shell', 'wm', 'size'], { timeout: ADB_TIMEOUT_MS })).stdout;
     const density = (await execFileAsync(adb, ['-s', device, 'shell', 'wm', 'density'], { timeout: ADB_TIMEOUT_MS })).stdout;
@@ -121,10 +141,10 @@ function lastMatch(text: string, pattern: RegExp): RegExpExecArray | null {
 }
 
 /** Force-stops and relaunches an app by package id — a reliable full JS reload. */
-export async function relaunchApp(packageId: string): Promise<boolean> {
+export async function relaunchApp(packageId: string, preferredDevice?: string): Promise<boolean> {
   const adb = findAdb();
   try {
-    const device = await firstDevice(adb);
+    const device = preferredDevice ?? (await firstDevice());
     if (!device) return false;
 
     await execFileAsync(adb, ['-s', device, 'shell', 'am', 'force-stop', packageId], {

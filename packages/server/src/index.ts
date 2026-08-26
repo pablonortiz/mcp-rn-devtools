@@ -15,7 +15,9 @@ export {
   reversePortsOnAllDevices,
   findAdb,
   firstDevice,
+  listDevices,
 } from './utils/adb.js';
+export type { AdbDevice, DeviceScreenInfo } from './utils/adb.js';
 export { captureAdbScreenshot } from './utils/adb-screenshot.js';
 export { logger } from './utils/logger.js';
 

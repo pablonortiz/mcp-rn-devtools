@@ -6,9 +6,9 @@ import { logger } from './logger.js';
  * Best-effort device screenshot over adb (Android only). Returns true when
  * the PNG landed at outPath; false when adb or a device is unavailable.
  */
-export async function captureAdbScreenshot(outPath: string): Promise<boolean> {
+export async function captureAdbScreenshot(outPath: string, preferredDevice?: string): Promise<boolean> {
   try {
-    const png = await captureScreenPng();
+    const png = await captureScreenPng(preferredDevice);
     if (!png) return false;
 
     await writeFile(outPath, png);
