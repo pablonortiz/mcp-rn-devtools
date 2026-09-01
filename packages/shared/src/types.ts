@@ -164,6 +164,8 @@ export interface QAReportPayload {
   mode: QAReportMode;
   element: QAReportElement;
   screen: { width: number; height: number; scale: number };
+  /** Reference images the tester attached, as data URLs — extracted to files at capture time, never persisted inline. */
+  attachments?: string[];
 }
 
 /** A captured report after server-side enrichment, as persisted to disk. */
@@ -194,6 +196,8 @@ export interface QAReport {
   afterScreenshot?: string | null;
   /** True when the fix was reverted from the cockpit. */
   reverted?: boolean;
+  /** File names of tester-attached reference images inside the report directory. */
+  attachments?: string[];
 }
 
 // Phase 5d: Storage
