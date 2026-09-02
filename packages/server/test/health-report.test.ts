@@ -31,7 +31,8 @@ describe('health report', () => {
     const report = await buildHealthReport(cm, bridge, quietProbes());
     expect(firstLine(report)).toMatch(/^BLOCKED: Metro is NOT running on port 8081/);
     expect(report).toContain('Version: ');
-    expect(report).toContain('Debugger owner: unbound');
+    expect(report).toContain('Debugger owner: none yet');
+    expect(report).toContain('Session app: none inferred');
   });
 
   it('Metro down but an app on another Metro → points at it', async () => {
@@ -73,13 +74,15 @@ describe('health report', () => {
     expect(firstLine(report)).toMatch(/^BLOCKED: 1 target\(s\) available but not attached yet/);
   });
 
-  it('tells an unbound-but-reclaimable port from an incompatible holder', async () => {
+  it('tells a port held by another process from an incompatible (pre-0.3) holder', async () => {
     const { cm, bridge } = disconnected();
     const asRecord = bridge as unknown as Record<string, unknown>;
     asRecord._portConflict = true;
-    expect(await buildHealthReport(cm, bridge, quietProbes())).toContain('takes it on its next tool call');
+    expect(await buildHealthReport(cm, bridge, quietProbes())).toMatch(/SDK channel :\d+: another process/);
     asRecord._incompatibleHolder = true;
-    expect(await buildHealthReport(cm, bridge, quietProbes())).toContain('does not yield — kill it');
+    const report = await buildHealthReport(cm, bridge, quietProbes());
+    expect(report).toContain('Debugger owner: an older instance holds the SDK port and does not yield — kill it');
+    expect(report).toMatch(/SDK channel :\d+: an older instance \(does not yield\)/);
   });
 
   it('mentions a newer published version', async () => {

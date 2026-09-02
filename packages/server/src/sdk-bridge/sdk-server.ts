@@ -40,7 +40,7 @@ export class SDKBridgeServer extends EventEmitter {
   private _portConflict = false;
   private _yielded = false;
   private _incompatibleHolder = false;
-  private port: number = SDK_WS_PORT;
+  private _port: number = SDK_WS_PORT;
   private starting: Promise<void> | null = null;
   /** Identifies this instance in takeover requests (a process can host several, e.g. in tests). */
   readonly instanceId = randomUUID();
@@ -64,9 +64,14 @@ export class SDKBridgeServer extends EventEmitter {
     return this._yielded;
   }
 
-  /** This instance holds the SDK port, i.e. it is the one entitled to the debugger. */
+  /** This instance holds the SDK port (the on-device SDK channel; pre-0.5 instances also treat it as the debugger token). */
   get holdsPort(): boolean {
     return this.wss !== null;
+  }
+
+  /** The SDK port this instance serves or wants. */
+  get port(): number {
+    return this._port;
   }
 
   /** Application id reported by the connected SDK's handshake, if any. */
@@ -82,7 +87,7 @@ export class SDKBridgeServer extends EventEmitter {
    * Resolves once settled either way; concurrent calls share one attempt.
    */
   start(port: number = SDK_WS_PORT, options: { takeover?: boolean } = {}): Promise<void> {
-    this.port = port;
+    this._port = port;
     if (this.starting) return this.starting;
     this.starting = this.startOnce(port, options.takeover !== false).finally(() => {
       this.starting = null;
@@ -93,7 +98,7 @@ export class SDKBridgeServer extends EventEmitter {
   /** A yielded (or never-bound) instance takes the port back — and with it the debugger. */
   async reclaim(): Promise<boolean> {
     if (this.wss) return true;
-    await this.start(this.port, { takeover: true });
+    await this.start(this._port, { takeover: true });
     return this.wss !== null;
   }
 

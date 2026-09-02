@@ -7,9 +7,14 @@ export interface CDPTarget {
   description: string;
   type: string;
   webSocketDebuggerUrl: string;
+  /** Application id (Android package / iOS bundle id); RN 0.73+. */
+  appId?: string;
+  /** Device model, OS and API level; RN 0.73+. */
+  deviceName?: string;
   vm?: string;
   reactNative?: {
     capabilities?: Record<string, boolean>;
+    /** Stable hash of app + device — survives relaunches and tells identical emulators apart. */
     logicalDeviceId?: string;
   };
 }

@@ -126,8 +126,8 @@ mcp-rn-devtools --version
 | Tool | Source | Description |
 |------|--------|-------------|
 | `health_check` | — | Verdict first — `READY` or `BLOCKED: cause → fix` — then version, debugger owner, stores, counts |
-| `list_targets` | — | Targets registered with Metro, plus apps found on other Metro ports (8082–8085) |
-| `select_target` | — | Pin a target, optionally on another Metro port; library runtimes (Reanimated) are refused |
+| `list_targets` | — | Targets on every Metro port (8081–8085) with who holds each one (→ this instance, ⊙ another instance, ✗ library runtime) |
+| `select_target` | — | Pin a target by id (optionally with `metro_port`) or by `app` id prefix; takes it from the instance holding it; library runtimes (Reanimated) are refused |
 | `clear_buffers` | — | Reset captured data before reproducing a scenario |
 
 ### Navigation
@@ -160,15 +160,17 @@ The server exports its building blocks (`ConnectionManager`, `SDKBridgeServer`, 
 
 The first product built this way is [**tapfix**](https://www.npmjs.com/package/tapfix): a live QA loop for React Native (mark issues on-device or from a cockpit web UI, and an embedded coding agent fixes them on the fly). Its MCP server is a superset of this one.
 
-## Multiple sessions
+## Multiple sessions and multiple apps
 
-Hermes admits **one** debugger per app. Every Claude Code session starts its own `mcp-rn-devtools` process, so the server settles who owns the debugger instead of letting instances steal it from each other:
+Hermes admits **one** debugger per app instance, and every Claude Code session starts its own `mcp-rn-devtools` process. Ownership is settled **per app on a device**, not per machine:
 
-- **The debugger follows the session in use.** An instance attaches on its first tool call (`lazy`, the default). If another instance holds the connection, the caller asks it to yield and takes over; the yielded one gets it back on *its* next tool call. Idle sessions never take the debugger away from the one you are working in.
-- **No orphans.** The server exits when its MCP client goes away (stdin closes or the parent process dies), so stale instances from closed sessions do not linger for days holding the port.
-- `health_check` tells you who owns the debugger and, if an old (pre-0.3) instance is squatting the SDK port, how to kill it.
+- **Sessions on different apps coexist.** Two emulators, two apps, two sessions: each holds its own debugger. Instances register in `~/.mcp-rn-devtools/instances/` and ask each other to yield through a per-instance control endpoint — only the one holding *that* app is asked.
+- **The debugger follows the session in use** for the *same* app. An instance attaches on its first tool call (`lazy`, the default); if a sibling holds that app, it yields and gets it back on its own next tool call. An instance kicked by a sibling does not fight back.
+- **A session attaches to its own app.** The server reads the app id from the repo it runs in (`android/app/build.gradle` `applicationId`, the iOS bundle id, or Expo's `app.json`; `MCP_RN_APP` overrides) and finds that app across Metro ports 8081–8085 — a session in the wms repo attaches to wms even while picking runs on 8081. `select_target` also takes an `app` id.
+- **No orphans.** The server exits when its MCP client goes away (stdin closes or the parent process dies).
+- `health_check` shows the session app, who holds the debugger, the other instances and their apps, and who serves the SDK channel. `list_targets` marks targets held by other instances with ⊙.
 
-Extensions that record continuously (tapfix) opt into `connectMode: 'eager'`.
+Extensions that record continuously (tapfix) opt into `connectMode: 'eager'`. Instances older than 0.5 (no registry) are still asked to yield over the SDK port.
 
 ## Secret Redaction
 
@@ -253,6 +255,8 @@ import { RNDevtoolsProfiler } from 'mcp-rn-devtools-sdk';
 | `METRO_PORT` | `8081` | Metro bundler port (when it has no app, ports 8082–8085 are checked too) |
 | `SDK_PORT` | `8098` | SDK WebSocket port — also marks which instance owns the debugger |
 | `MCP_RN_CONNECT` | `lazy` | `lazy` attaches on the first tool call; `eager` attaches at startup |
+| `MCP_RN_APP` | from the repo | App id prefix(es) this session works on, comma-separated (overrides the cwd detection) |
+| `MCP_RN_STATE_DIR` | `~/.mcp-rn-devtools/instances` | Where instances register themselves for per-app ownership |
 | `MCP_RN_NO_REDACT` | - | Disable secret redaction |
 | `MCP_RN_NO_UPDATE_CHECK` | - | Skip the npm "newer version" lookup in `health_check` |
 | `MCP_RN_DEBUG` | - | Enable debug logging |
@@ -265,7 +269,8 @@ import { RNDevtoolsProfiler } from 'mcp-rn-devtools-sdk';
 - **Reconnection:** exponential backoff, agent re-injected automatically after every bundle reload. A pinned target that keeps failing is unpinned after 3 attempts.
 - **Console replay:** `Runtime.enable` replays the runtime's console backlog on every reconnect; entries are deduplicated by (timestamp, message) so warnings do not inflate.
 - **`global` in the evaluate scope:** Hermes exposes `globalThis` but not `global` to `Runtime.evaluate` (Metro only passes `global` to module factories). Injected scripts resolve the global object themselves and `evaluate_js` aliases `global` for the duration of the call.
-- **Multi-Metro:** when nothing listens on the configured port and exactly one other port (8082–8085) has an app, the server switches to it. A running Metro without an app is left alone (the app is about to appear there), and with several candidates it asks you to `select_target` with `metro_port`.
+- **Multi-Metro:** a known session app is searched across ports 8081–8085 regardless of what the configured port serves. Without a session app: when nothing listens on the configured port and exactly one other port has an app, the server switches to it; a running Metro without an app is left alone (the app is about to appear there), and with several candidates it asks you to `select_target`.
+- **Target identity:** ownership is keyed by `reactNative.logicalDeviceId` (RN 0.73+: a stable hash of app + device, shared by the app's main and Reanimated runtimes), falling back to app id + device name.
 - **Action log caveat:** the agent wraps `store.dispatch` at discovery time; components that captured a direct `dispatch` reference *before* discovery bypass the log (rare — discovery runs at connect).
 
 ## Compatibility

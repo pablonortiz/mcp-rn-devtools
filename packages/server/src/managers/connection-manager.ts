@@ -12,6 +12,8 @@ import {
   type CDPTarget,
 } from '../cdp/discovery.js';
 import { AgentBridge } from '../cdp/agent-bridge.js';
+import { targetKey } from '../cdp/target-key.js';
+import { matchesSessionApp } from '../session-app.js';
 import { LogManager } from './log-manager.js';
 import { ErrorManager } from './error-manager.js';
 import { NetworkManager } from './network-manager.js';
@@ -32,7 +34,17 @@ export interface ConnectionManagerOptions {
   scanPorts?: number[];
   /** Backoff bounds for the background reconnect loop. */
   reconnect?: { minMs?: number; maxMs?: number };
+  /** App id prefixes this session works on — preferred over whatever else Metro lists. */
+  sessionAppIds?: string[];
 }
+
+export interface ResolvedTarget {
+  target: CDPTarget;
+  metroPort: number;
+  via: 'pinned' | 'session-app' | 'metro' | 'other-metro';
+}
+
+type ReconnectGuard = () => boolean | Promise<boolean>;
 
 export class ConnectionManager extends EventEmitter {
   readonly cdp = new CDPConnection();
@@ -48,6 +60,7 @@ export class ConnectionManager extends EventEmitter {
   readonly actionManager = new ActionManager();
   readonly navigationTimingManager = new NavigationTimingManager();
   readonly scanPorts: number[];
+  readonly sessionAppIds: string[];
 
   private _metroPort: number;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -56,8 +69,10 @@ export class ConnectionManager extends EventEmitter {
   private preferredTargetId: string | null = null;
   private pinnedFailures = 0;
   private _currentTarget: CDPTarget | null = null;
+  private _connectingTarget: CDPTarget | null = null;
   private inFlight: Promise<boolean> | null = null;
   private epoch = 0;
+  private reconnectGuard: ReconnectGuard | null = null;
   private reconnectDelay: number;
   private readonly minReconnectDelay: number;
   private readonly maxReconnectDelay: number;
@@ -67,6 +82,7 @@ export class ConnectionManager extends EventEmitter {
     const resolved = typeof options === 'number' ? { metroPort: options } : options;
     this._metroPort = resolved.metroPort ?? DEFAULT_METRO_PORT;
     this.scanPorts = resolved.scanPorts ?? DEFAULT_SCAN_PORTS;
+    this.sessionAppIds = resolved.sessionAppIds ?? [];
     this.minReconnectDelay = resolved.reconnect?.minMs ?? 1000;
     this.maxReconnectDelay = resolved.reconnect?.maxMs ?? 30000;
     this.reconnectDelay = this.minReconnectDelay;
@@ -110,32 +126,47 @@ export class ConnectionManager extends EventEmitter {
     return this.preferredTargetId;
   }
 
+  /** Identity (app on device) of the attached target. */
+  get currentTargetKey(): string | null {
+    return this._currentTarget ? targetKey(this._currentTarget) : null;
+  }
+
+  /** Target an attach is in progress for. */
+  get connectingTarget(): CDPTarget | null {
+    return this._connectingTarget;
+  }
+
+  /** Consulted before a background reconnect; returning false stops the loop (a sibling holds the target). */
+  setReconnectGuard(guard: ReconnectGuard | null): void {
+    this.reconnectGuard = guard;
+  }
+
   /**
    * Finds the app's runtime and attaches now — a caller wants it, so a pending
    * backoff wait is skipped. Concurrent calls (tool calls, the reconnect timer)
    * share one attempt; without a target the background reconnect keeps looking.
    */
-  async connect(): Promise<void> {
+  async connect(resolved?: ResolvedTarget): Promise<void> {
     this.stopReconnectPolling();
-    const connected = await this.attempt();
+    const connected = await this.attempt(resolved);
     if (!connected) this.startReconnectPolling();
   }
 
-  private attempt(): Promise<boolean> {
+  private attempt(resolved?: ResolvedTarget): Promise<boolean> {
     if (!this.inFlight) {
-      this.inFlight = this.connectOnce().finally(() => {
+      this.inFlight = this.connectOnce(resolved).finally(() => {
         this.inFlight = null;
       });
     }
     return this.inFlight;
   }
 
-  private async connectOnce(): Promise<boolean> {
+  private async connectOnce(preResolved?: ResolvedTarget): Promise<boolean> {
     if (this.cdp.connected) return true;
     const epoch = this.epoch;
     try {
-      const target = await this.pickTarget();
-      if (!target) {
+      const resolved = preResolved ?? (await this.resolveTarget());
+      if (!resolved) {
         logger.warn(
           'No React Native target found. Is a React Native app running with Metro on port ' +
             this.metroPort +
@@ -144,7 +175,8 @@ export class ConnectionManager extends EventEmitter {
         return false;
       }
 
-      await this.establishConnection(target);
+      this.setMetroPort(resolved.metroPort);
+      await this.establishConnection(resolved.target);
       if (epoch !== this.epoch) {
         // suspend() ran while we were attaching: the debugger belongs to someone else now
         this.cdp.disconnect();
@@ -198,23 +230,49 @@ export class ConnectionManager extends EventEmitter {
     this.emit('metro-port-changed', metroPort);
   }
 
-  private async pickTarget(): Promise<CDPTarget | null> {
+  /**
+   * Which target this instance should attach to: the pinned one, else the app
+   * this session works on (searched across Metro ports — one app has no
+   * ambiguity), else whatever the configured Metro serves.
+   */
+  async resolveTarget(): Promise<ResolvedTarget | null> {
     const { reachable, targets } = await probeMetro(this.metroPort);
+
     if (this.preferredTargetId) {
       const pinned = targets.find((t) => t.id === this.preferredTargetId);
-      if (pinned) return pinned;
+      if (pinned) return { target: pinned, metroPort: this.metroPort, via: 'pinned' };
       logger.warn(`Pinned target ${this.preferredTargetId} gone, falling back to auto-select`);
       this.preferredTargetId = null;
     }
-    const target = findReactNativeTarget(targets);
-    if (target) return target;
+
+    if (this.sessionAppIds.length > 0) {
+      const local = targets.filter(isMainRuntimeTarget).find((t) => matchesSessionApp(t.appId ?? t.title, this.sessionAppIds));
+      if (local) return { target: local, metroPort: this.metroPort, via: 'session-app' };
+      const elsewhere = await this.findTargetsForApp(this.sessionAppIds);
+      if (elsewhere.length > 0) return elsewhere[0];
+    }
+
+    const auto = findReactNativeTarget(targets);
+    if (auto) return { target: auto, metroPort: this.metroPort, via: 'metro' };
     // A running Metro without an app means the app is about to show up here;
     // only a dead configured port justifies looking elsewhere.
     return reachable ? null : this.pickFromAnotherMetro();
   }
 
+  /** Main runtimes of the given app(s) across every known Metro port, configured port first. */
+  async findTargetsForApp(appIds: string[]): Promise<ResolvedTarget[]> {
+    const ports = [this.metroPort, ...this.scanPorts.filter((port) => port !== this.metroPort)];
+    const metros = await scanMetroPorts(ports);
+    return metros.flatMap((metro) =>
+      metro.targets
+        .filter(isMainRuntimeTarget)
+        .filter((target) => matchesSessionApp(target.appId ?? target.title, appIds))
+        .map((target): ResolvedTarget => ({ target, metroPort: metro.port, via: 'session-app' })),
+    );
+  }
+
   /** Switches Metro when exactly one other port has an app: unambiguous, no guessing between apps. */
-  private async pickFromAnotherMetro(): Promise<CDPTarget | null> {
+  private async pickFromAnotherMetro(): Promise<ResolvedTarget | null> {
     const otherPorts = this.scanPorts.filter((port) => port !== this.metroPort);
     if (otherPorts.length === 0) return null;
 
@@ -224,13 +282,18 @@ export class ConnectionManager extends EventEmitter {
     if (withApp.length !== 1) return null;
 
     logger.info(`No Metro on :${this.metroPort}, found an app on :${withApp[0].port} — switching`);
-    this.setMetroPort(withApp[0].port);
-    return withApp[0].target;
+    return { target: withApp[0].target, metroPort: withApp[0].port, via: 'other-metro' };
   }
 
   private async establishConnection(target: CDPTarget): Promise<void> {
     logger.info(`Connecting to: ${target.title} (${target.id})`);
-    await this.cdp.connect(target.webSocketDebuggerUrl, this.metroPort);
+    this._connectingTarget = target;
+    this.emit('connecting', target, this.metroPort);
+    try {
+      await this.cdp.connect(target.webSocketDebuggerUrl, this.metroPort);
+    } finally {
+      this._connectingTarget = null;
+    }
     this._currentTarget = target;
 
     // Enable Debugger to transition Hermes from RunningDetached → Running.
@@ -266,6 +329,7 @@ export class ConnectionManager extends EventEmitter {
     this.cdp.on('disconnected', () => {
       this._currentTarget = null;
       this.networkManager.detach();
+      this.emit('disconnected');
       this.startReconnectPolling();
     });
   }
@@ -283,6 +347,8 @@ export class ConnectionManager extends EventEmitter {
 
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
+
+      if (this.reconnectGuard && !(await this.reconnectGuard())) return;
 
       if (await this.attempt()) {
         this.reconnectDelay = this.minReconnectDelay;

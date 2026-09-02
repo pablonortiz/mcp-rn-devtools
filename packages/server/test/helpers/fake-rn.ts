@@ -11,6 +11,8 @@ export interface FakeHermesOptions {
   respond?: (expression: string) => unknown;
   /** Close every connection as soon as it opens (a target that dies on attach). */
   dropOnConnect?: boolean;
+  /** Like Hermes: a new debugger connection kicks the previous one. */
+  singleDebugger?: boolean;
 }
 
 export interface FakeHermes {
@@ -45,6 +47,9 @@ export async function startFakeHermes(options: FakeHermesOptions = {}): Promise<
   const respond = options.respond ?? healthyAppResponses;
 
   wss.on('connection', (ws) => {
+    if (options.singleDebugger) {
+      for (const previous of connections) if (previous.readyState === previous.OPEN) previous.close();
+    }
     connections.push(ws);
     if (options.dropOnConnect) {
       ws.close();
@@ -102,14 +107,27 @@ export async function startFakeMetro(initialTargets: CDPTarget[] = []): Promise<
   return metro;
 }
 
-export function fuseboxTarget(id: string, webSocketDebuggerUrl: string): CDPTarget {
+export interface TargetIdentity {
+  appId?: string;
+  deviceName?: string;
+  logicalDeviceId?: string;
+}
+
+export function fuseboxTarget(id: string, webSocketDebuggerUrl: string, identity: TargetIdentity = {}): CDPTarget {
+  const appId = identity.appId ?? 'com.example.app';
+  const deviceName = identity.deviceName ?? 'emulator - 15 - API 35';
   return {
     id,
-    title: 'com.example.app (emulator)',
+    title: `${appId} (${deviceName.split(' ')[0]})`,
     description: 'React Native Bridgeless [C++ connection]',
+    appId,
+    deviceName,
     type: 'node',
     webSocketDebuggerUrl,
-    reactNative: { capabilities: { prefersFuseboxFrontend: true } },
+    reactNative: {
+      capabilities: { prefersFuseboxFrontend: true },
+      logicalDeviceId: identity.logicalDeviceId ?? `${appId}@${deviceName}`,
+    },
   };
 }
 

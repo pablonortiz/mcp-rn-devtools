@@ -1,89 +1,121 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { ConnectionManager } from '../src/managers/connection-manager.js';
-import { SDKBridgeServer } from '../src/sdk-bridge/sdk-server.js';
-import { ConnectionOwnership } from '../src/ownership.js';
-import { startFakeHermes, startFakeMetro, fuseboxTarget, freePort, waitFor, type FakeHermes, type FakeMetro } from './helpers/fake-rn.js';
+import { buildHealthReport } from '../src/tools/health-report.js';
+import { createStackFactory } from './helpers/stack.js';
+import { startFakeHermes, startFakeMetro, fuseboxTarget, freePort, sleep, waitFor, type FakeHermes, type FakeMetro } from './helpers/fake-rn.js';
 
-interface Stack {
-  cm: ConnectionManager;
-  bridge: SDKBridgeServer;
-  ownership: ConnectionOwnership;
-}
-
-describe('ConnectionOwnership — the debugger follows the session in use', () => {
-  let hermes: FakeHermes;
+describe('ownership per target — sessions on different apps coexist', () => {
+  let hermesX: FakeHermes;
+  let hermesY: FakeHermes;
   let metro: FakeMetro;
   let sdkPort: number;
-  const stacks: Stack[] = [];
-
-  const make = (): Stack => {
-    const cm = new ConnectionManager({ metroPort: metro.port, scanPorts: [], reconnect: { minMs: 20, maxMs: 40 } });
-    const bridge = new SDKBridgeServer(cm);
-    const stack = { cm, bridge, ownership: new ConnectionOwnership(cm, bridge) };
-    stacks.push(stack);
-    return stack;
-  };
+  let factory: ReturnType<typeof createStackFactory>;
 
   beforeEach(async () => {
-    hermes = await startFakeHermes();
-    metro = await startFakeMetro([fuseboxTarget('app-1', hermes.url)]);
+    hermesX = await startFakeHermes({ singleDebugger: true });
+    hermesY = await startFakeHermes({ singleDebugger: true });
+    metro = await startFakeMetro([
+      fuseboxTarget('x-1', hermesX.url, { appId: 'com.x.beta', deviceName: 'Pixel A', logicalDeviceId: 'device-x' }),
+      fuseboxTarget('y-1', hermesY.url, { appId: 'com.y.beta', deviceName: 'Pixel B', logicalDeviceId: 'device-y' }),
+    ]);
     sdkPort = await freePort();
+    factory = createStackFactory();
   });
 
   afterEach(async () => {
-    for (const { cm, bridge } of stacks.splice(0)) {
-      bridge.stop();
-      cm.shutdown();
-    }
+    factory.cleanup();
     await metro.close();
-    await hermes.close();
+    await hermesX.close();
+    await hermesY.close();
   });
 
-  it('a lazy instance claims the port and connects on its first tool call', async () => {
-    const a = make();
-    expect(a.cm.connected).toBe(false);
+  const quietProbes = {
+    probeMetro: async () => ({ reachable: false, targets: [] }),
+    scanMetroPorts: async () => [],
+    readDevServerHint: async () => null,
+    latestVersion: async () => null,
+  };
+
+  it('two sessions hold two apps at the same time', async () => {
+    const a = await factory.make({ metroPort: metro.port, sdkPort, sessionAppIds: ['com.x'], label: 'A' });
+    const b = await factory.make({ metroPort: metro.port, sdkPort, sessionAppIds: ['com.y'], label: 'B' });
 
     await a.ownership.ensure();
-
-    expect(a.bridge.holdsPort).toBe(true);
-    expect(a.cm.connected).toBe(true);
-  });
-
-  it('a sibling that gets used takes the debugger over, and the first one gets it back when used again', async () => {
-    const a = make();
-    const b = make();
-    await a.bridge.start(sdkPort);
-    await a.ownership.ensure();
-    expect(a.cm.connected).toBe(true);
-
-    await b.bridge.start(sdkPort);
-    expect(a.bridge.yielded).toBe(true);
-    expect(a.cm.connected).toBe(false);
     await b.ownership.ensure();
-    expect(b.cm.connected).toBe(true);
+
+    expect(a.connectionManager.currentTarget?.appId).toBe('com.x.beta');
+    expect(b.connectionManager.currentTarget?.appId).toBe('com.y.beta');
+    expect(a.connectionManager.connected).toBe(true);
+    expect(b.connectionManager.connected).toBe(true);
+    expect(a.registry.others().map((record) => record.target?.appId)).toEqual(['com.y.beta']);
+  });
+
+  it('a third session on app X takes it only from the session holding X', async () => {
+    const a = await factory.make({ metroPort: metro.port, sdkPort, sessionAppIds: ['com.x'], label: 'A' });
+    const b = await factory.make({ metroPort: metro.port, sdkPort, sessionAppIds: ['com.y'], label: 'B' });
+    const c = await factory.make({ metroPort: metro.port, sdkPort, sessionAppIds: ['com.x'], label: 'C' });
+    await a.ownership.ensure();
+    await b.ownership.ensure();
+
+    await c.ownership.ensure();
+
+    expect(c.connectionManager.connected).toBe(true);
+    expect(a.connectionManager.connected).toBe(false);
+    expect(b.connectionManager.connected).toBe(true);
 
     await a.ownership.ensure();
-    expect(a.bridge.holdsPort).toBe(true);
-    expect(a.cm.connected).toBe(true);
-    await waitFor(() => b.bridge.yielded && !b.cm.connected);
+    expect(a.connectionManager.connected).toBe(true);
+    await waitFor(() => !c.connectionManager.connected);
+    expect(b.connectionManager.connected).toBe(true);
   });
 
-  it('parallel tool calls never make the instance yield to itself', async () => {
-    const a = make();
+  it('an instance kicked by a sibling does not fight back', async () => {
+    const a = await factory.make({ metroPort: metro.port, sdkPort, sessionAppIds: ['com.x'], label: 'A' });
+    const intruder = await factory.make({ metroPort: metro.port, sdkPort, sessionAppIds: ['com.x'], label: 'I' });
+    await a.ownership.ensure();
 
-    await Promise.all([a.ownership.ensure(), a.ownership.ensure(), a.ownership.ensure()]);
+    // Attach without asking (what a pre-0.5 instance would do); Hermes drops A
+    await intruder.connectionManager.connect();
+    await waitFor(() => !a.connectionManager.connected);
+    await sleep(250);
 
-    expect(a.bridge.holdsPort).toBe(true);
-    expect(a.bridge.yielded).toBe(false);
-    expect(a.cm.connected).toBe(true);
-    expect(hermes.connections).toHaveLength(1);
+    expect(intruder.connectionManager.connected).toBe(true);
+    expect(hermesX.connections).toHaveLength(2);
+    expect(a.registry.holderOf('device-x')?.label).toBe('I');
   });
 
-  it('connect: false only claims the port', async () => {
-    const a = make();
-    await a.bridge.start(sdkPort);
-    await a.ownership.ensure({ connect: false });
-    expect(a.bridge.holdsPort).toBe(true);
-    expect(a.cm.connected).toBe(false);
+  it('select_target-style claim yields only the target asked for', async () => {
+    const a = await factory.make({ metroPort: metro.port, sdkPort, sessionAppIds: ['com.x'], label: 'A' });
+    const b = await factory.make({ metroPort: metro.port, sdkPort, sessionAppIds: ['com.y'], label: 'B' });
+    const c = await factory.make({ metroPort: metro.port, sdkPort, label: 'C' });
+    await a.ownership.ensure();
+    await b.ownership.ensure();
+
+    const [wanted] = await c.connectionManager.findTargetsForApp(['com.y']);
+    await c.ownership.claimTarget(wanted);
+    await c.connectionManager.connectToTarget(wanted.target.id, wanted.metroPort);
+
+    expect(c.connectionManager.currentTarget?.appId).toBe('com.y.beta');
+    expect(b.connectionManager.connected).toBe(false);
+    expect(a.connectionManager.connected).toBe(true);
+  });
+
+  it('health report shows the session app, the owner and the other instances', async () => {
+    const a = await factory.make({ metroPort: metro.port, sdkPort, sessionAppIds: ['com.x'], label: 'A' });
+    const b = await factory.make({ metroPort: metro.port, sdkPort, sessionAppIds: ['com.y'], label: 'B' });
+    await a.ownership.ensure();
+    await b.ownership.ensure();
+
+    const report = await buildHealthReport(a.connectionManager, a.sdkBridge, quietProbes, { registry: a.registry, sessionApp: a.sessionApp });
+
+    expect(report).toContain('Session app: com.x (options)');
+    expect(report).toContain('Debugger owner: this instance — com.x.beta @ Pixel A');
+    expect(report).toMatch(/Other instances:\n\s+B .* → com\.y\.beta @ Pixel B \(connected\)/);
+  });
+
+  it('without a session app, a lazy instance behaves like before (whatever the Metro serves)', async () => {
+    const a = await factory.make({ metroPort: metro.port, sdkPort, label: 'A' });
+    await a.ownership.ensure();
+    expect(a.connectionManager.connected).toBe(true);
+    expect(a.connectionManager.currentTarget?.appId).toBe('com.x.beta');
   });
 });

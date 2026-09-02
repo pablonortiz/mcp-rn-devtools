@@ -2,11 +2,13 @@ import type { ToolRegistrar } from './registrar.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 import type { SDKBridgeServer } from '../sdk-bridge/sdk-server.js';
 import { buildHealthReport } from './health-report.js';
+import type { ToolContext } from './index.js';
 
 export function registerHealthCheck(
   server: ToolRegistrar,
   cm: ConnectionManager,
   sdkBridge: SDKBridgeServer,
+  context: ToolContext,
 ): void {
   server.tool(
     'health_check',
@@ -14,7 +16,7 @@ export function registerHealthCheck(
     {},
     { readOnlyHint: true },
     async () => ({
-      content: [{ type: 'text', text: await buildHealthReport(cm, sdkBridge) }],
+      content: [{ type: 'text', text: await buildHealthReport(cm, sdkBridge, undefined, context) }],
     }),
   );
 }

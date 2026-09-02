@@ -5,9 +5,16 @@ export type { ServerOptions, ConnectMode } from './server.js';
 // they share this process's CDP session and SDK channel instead of competing
 // for the single Hermes debugger.
 export { ConnectionManager } from './managers/connection-manager.js';
-export type { ConnectionManagerOptions } from './managers/connection-manager.js';
+export type { ConnectionManagerOptions, ResolvedTarget } from './managers/connection-manager.js';
 export { SDKBridgeServer } from './sdk-bridge/sdk-server.js';
 export { ConnectionOwnership } from './ownership.js';
+export type { OwnershipDeps } from './ownership.js';
+export { InstanceRegistry, defaultRegistryDir } from './ownership/instance-registry.js';
+export type { InstanceRecord, InstanceTarget } from './ownership/instance-registry.js';
+export { ControlServer, requestYield } from './ownership/control-server.js';
+export { targetKey, describeTargetApp } from './cdp/target-key.js';
+export { detectSessionApp, matchesSessionApp } from './session-app.js';
+export type { SessionApp } from './session-app.js';
 export { AgentBridge } from './cdp/agent-bridge.js';
 export { evaluateByValue } from './cdp/evaluate.js';
 export {
@@ -20,6 +27,7 @@ export {
 export type { CDPTarget, MetroProbe } from './cdp/discovery.js';
 export { activatingRegistrar } from './tools/registrar.js';
 export type { ToolRegistrar } from './tools/registrar.js';
+export type { ToolContext } from './tools/index.js';
 export { exitWhenOrphaned } from './utils/process-lifecycle.js';
 export { parseDevServerHint, readDevServerHint } from './utils/dev-server-hint.js';
 export type { DevServerHint } from './utils/dev-server-hint.js';

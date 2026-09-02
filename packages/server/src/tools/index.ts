@@ -2,6 +2,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 import type { SDKBridgeServer } from '../sdk-bridge/sdk-server.js';
 import type { ConnectionOwnership } from '../ownership.js';
+import type { InstanceRegistry } from '../ownership/instance-registry.js';
+import type { SessionApp } from '../session-app.js';
 import { activatingRegistrar } from './registrar.js';
 import { registerGetConsoleLogs } from './get-console-logs.js';
 import { registerGetErrors } from './get-errors.js';
@@ -28,11 +30,18 @@ import { registerWaitForLog } from './wait-for-log.js';
 import { registerGetStateDiff } from './get-state-diff.js';
 import { registerTargetTools } from './targets.js';
 
+/** What the diagnostic tools show besides the connection: who else is running, which app this session is on. */
+export interface ToolContext {
+  registry: InstanceRegistry;
+  sessionApp: SessionApp;
+}
+
 export function registerAllTools(
   server: McpServer,
   cm: ConnectionManager,
   sdkBridge: SDKBridgeServer,
   ownership: ConnectionOwnership,
+  context: ToolContext,
 ): void {
   // Every tool first makes this instance the debugger's owner (lazy connect,
   // takeover from siblings). The target tools manage the connection themselves.
@@ -47,8 +56,8 @@ export function registerAllTools(
   registerGetNetworkRequests(tools, cm);
   registerGetFailedRequests(tools, cm);
   // Diagnostics
-  registerHealthCheck(tools, cm, sdkBridge);
-  registerTargetTools(tools, cm, ownership);
+  registerHealthCheck(tools, cm, sdkBridge, context);
+  registerTargetTools(tools, cm, ownership, context);
   registerClearBuffers(tools, cm);
   // Navigation
   registerGetNavigationState(tools, cm, sdkBridge);
