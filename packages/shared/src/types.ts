@@ -168,7 +168,16 @@ export interface QAReportElement {
     bundleLine?: number;
     bundleColumn?: number;
     functionName?: string | null;
+    /** Further creation-stack frames (bundle positions) — consumed server-side, never persisted. */
+    frames?: Array<{ bundleUrl: string; bundleLine: number; bundleColumn: number; functionName: string | null }>;
   } | null;
+  /**
+   * Nearest hierarchy level (from the selected one upwards) whose JSX lives in
+   * the project rather than node_modules — where the agent should start.
+   */
+  repoSource?: { level: string; fileName: string; lineNumber?: number; columnNumber?: number } | null;
+  /** Raw bundle positions for every hierarchy level (root first); the server resolves repoSource from these. */
+  levelSources?: Array<QAReportElement['source']>;
 }
 
 /** Another element inside an area mark, besides the primary one. */

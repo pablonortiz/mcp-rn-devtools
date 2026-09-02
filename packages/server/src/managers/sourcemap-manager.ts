@@ -70,14 +70,22 @@ export class SourceMapManager {
     }
   }
 
-  /** The device reaches Metro through its own host (10.0.2.2, localhost via adb reverse…); we always go through localhost. */
+  /**
+   * Bundle URL → its source map URL, via localhost (the device reaches Metro
+   * through its own host: 10.0.2.2, adb reverse…). Hermes stack frames write
+   * the query as `index.bundle//&platform=…`, and RN asks Metro for
+   * `sourcePaths=url-server` (placeholder `/[metro-project]/` paths) — we want
+   * absolute paths, so the map is requested with `sourcePaths=absolute`.
+   */
   private mapUrlFor(bundleUrl: string): string | null {
     try {
-      const url = new URL(bundleUrl);
+      const url = new URL(bundleUrl.replace(/\.bundle\/\/&/, '.bundle?'));
+      if (!url.pathname.endsWith('.bundle')) return null;
       url.hostname = 'localhost';
       url.port = String(this.metroPort);
       url.pathname = url.pathname.replace(/\.bundle$/, '.map');
-      return url.pathname.endsWith('.map') ? url.toString() : null;
+      url.searchParams.set('sourcePaths', 'absolute');
+      return url.toString();
     } catch {
       return null;
     }

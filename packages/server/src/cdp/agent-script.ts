@@ -1,3 +1,5 @@
+import { createHash } from 'crypto';
+
 export const AGENT_GLOBAL_KEY = '__RN_DEVTOOLS_AGENT__';
 
 /**
@@ -11,19 +13,22 @@ export const AGENT_GLOBAL_KEY = '__RN_DEVTOOLS_AGENT__';
  *   kick-and-poll pattern via agent.results slots.
  * - Written in ES5 style: it runs inside Hermes through a single evaluate call.
  */
-export const AGENT_SCRIPT = `
+const RAW_AGENT_SCRIPT = `
 (function() {
   var g = (typeof globalThis !== 'undefined' ? globalThis : global);
-  // Reinstall over older agents so new capabilities (qa hit-testing) land on reconnect
+  // Reinstall whenever the script changed (content hash) so new capabilities
+  // land on reconnect without anyone remembering to bump a version.
+  var BUILD = '__AGENT_BUILD__';
   var old = g.${AGENT_GLOBAL_KEY};
-  if (old && old.version >= 3) return 'already-installed';
+  if (old && old.build === BUILD) return 'already-installed';
 
   var MAX_ACTIONS = 500;
 
   // Inherit wrapped stores/actions by reference: the old dispatch wrappers keep
   // pushing into the same arrays, so nothing recorded is lost on reinstall.
   var agent = {
-    version: 3,
+    build: BUILD,
+    version: 5,
     stores: (old && old.stores) || {},
     queryClient: (old && old.queryClient) || null,
     navigation: (old && old.navigation) || null,
@@ -322,8 +327,10 @@ export const AGENT_SCRIPT = `
   }
 
   // Where the element's JSX lives: React 18 gives it directly, React 19 only
-  // via the creation stack — we return the raw bundle position for the server
-  // to resolve through Metro's source map.
+  // via the creation stack. React's own frames are anonymous in the bundle, so
+  // names can't filter them: we return the first frames and the server drops
+  // the ones that resolve into react/react-native through the source map.
+  var MAX_FRAMES = 8;
   function debugSourceOf(fiber) {
     if (!fiber) return null;
     var legacy = fiber._debugSource;
@@ -334,13 +341,16 @@ export const AGENT_SCRIPT = `
     var text = stack ? (typeof stack === 'string' ? stack : stack.stack) : null;
     if (!text) return null;
     var lines = String(text).split('\\n');
-    for (var i = 0; i < lines.length; i++) {
+    var frames = [];
+    for (var i = 0; i < lines.length && frames.length < MAX_FRAMES; i++) {
       if (RUNTIME_FRAME.test(lines[i])) continue;
       var m = /at\\s+(?:(\\S+)\\s+\\()?(?:address at )?(https?:\\/\\/[^\\s)]+?):(\\d+):(\\d+)\\)?/.exec(lines[i]);
       if (!m) continue;
-      return { bundleUrl: m[2], bundleLine: Number(m[3]), bundleColumn: Number(m[4]), functionName: m[1] || null };
+      frames.push({ bundleUrl: m[2], bundleLine: Number(m[3]), bundleColumn: Number(m[4]), functionName: m[1] || null });
     }
-    return null;
+    if (frames.length === 0) return null;
+    var first = frames[0];
+    return { bundleUrl: first.bundleUrl, bundleLine: first.bundleLine, bundleColumn: first.bundleColumn, functionName: first.functionName, frames: frames };
   }
 
   function flattenStyle(st) {
@@ -421,15 +431,25 @@ export const AGENT_SCRIPT = `
           if (!viewData || !viewData.hierarchy || viewData.hierarchy.length === 0) return false;
           handled = true;
           agent.qaHierarchy = viewData.hierarchy;
-          var owners = viewData.closestInstance ? ownerChain(viewData.closestInstance) : [];
-          agent.qaOwners = owners.length === viewData.hierarchy.length ? owners : null;
           var names = [];
           for (var n = 0; n < viewData.hierarchy.length; n++) names.push(viewData.hierarchy[n].name || 'Unknown');
+          // The owner chain and the inspector's hierarchy share the leaf; RN may
+          // add an entry at the root end, so align from the leaf, not the root.
+          var owners = viewData.closestInstance ? ownerChain(viewData.closestInstance) : [];
+          var offset = names.length - owners.length;
+          agent.qaOwners = [];
+          for (var o = 0; o < names.length; o++) agent.qaOwners.push(o - offset >= 0 ? owners[o - offset] : null);
           var selectedIndex = viewData.selectedIndex != null ? viewData.selectedIndex : names.length - 1;
           var level = {};
           try { level = serializeLevel(levelData(viewData.hierarchy[selectedIndex])); } catch (e) {}
           var source = null;
-          try { source = debugSourceOf(agent.qaOwners && agent.qaOwners[selectedIndex]); } catch (e3) {}
+          try { source = debugSourceOf(agent.qaOwners[selectedIndex]); } catch (e3) {}
+          var levelSources = [];
+          for (var ls = 0; ls < names.length; ls++) {
+            var lsrc = null;
+            try { lsrc = debugSourceOf(agent.qaOwners[ls]); } catch (e5) {}
+            levelSources.push(lsrc);
+          }
           done(true, {
             frame: viewData.frame,
             hierarchy: names,
@@ -438,7 +458,8 @@ export const AGENT_SCRIPT = `
             componentStack: String(viewData.componentStack || '').slice(0, 4000),
             props: level.props || {},
             style: level.style || null,
-            source: source
+            source: source,
+            levelSources: levelSources
           });
           return true;
         });
@@ -485,3 +506,6 @@ export const AGENT_SCRIPT = `
   return 'installed';
 })()
 `;
+
+const AGENT_BUILD = createHash('sha1').update(RAW_AGENT_SCRIPT).digest('hex').slice(0, 12);
+export const AGENT_SCRIPT = RAW_AGENT_SCRIPT.replace('__AGENT_BUILD__', AGENT_BUILD);
