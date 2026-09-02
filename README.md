@@ -71,6 +71,7 @@ Add to your `claude_desktop_config.json`:
 
 ```bash
 npm install -g mcp-rn-devtools
+mcp-rn-devtools --version
 ```
 
 ## Quick Start
@@ -108,25 +109,25 @@ npm install -g mcp-rn-devtools
 
 | Tool | Source | Description |
 |------|--------|-------------|
-| `get_console_logs` | CDP + SDK | Console output with level filter and search |
-| `get_errors` | CDP + SDK | JS errors and exceptions with stack traces |
-| `get_warnings` | CDP + SDK | LogBox warnings from console.warn |
+| `get_console_logs` | CDP + SDK | Console output with level filter and search; capped for the LLM by default, `full=true` for everything |
+| `get_errors` | CDP + SDK | JS errors and exceptions with stack traces (5 frames by default, `full=true` for all) |
+| `get_warnings` | CDP + SDK | LogBox warnings from console.warn, deduplicated across debugger reconnects |
 | `wait_for_log` | CDP + SDK | Block until a log matching a pattern appears — synchronize with app activity |
 
 ### Network
 
 | Tool | Source | Description |
 |------|--------|-------------|
-| `get_network_requests` | CDP + SDK | HTTP requests; `verbose` adds headers/bodies with secrets redacted |
-| `get_failed_requests` | CDP + SDK | Requests with status >= 400 or network errors |
+| `get_network_requests` | CDP + SDK | HTTP requests; `verbose` adds headers/bodies with secrets redacted, capped unless `full=true` |
+| `get_failed_requests` | CDP + SDK | Requests with status >= 400 or network errors, response bodies capped unless `full=true` |
 
 ### Diagnostics
 
 | Tool | Source | Description |
 |------|--------|-------------|
-| `health_check` | — | Connection status, discovered stores, counts — plus actionable diagnosis when disconnected |
-| `list_targets` | — | Debuggable targets registered with Metro (multi-device) |
-| `select_target` | — | Pin a specific target when several devices/apps are connected |
+| `health_check` | — | Verdict first — `READY` or `BLOCKED: cause → fix` — then version, debugger owner, stores, counts |
+| `list_targets` | — | Targets registered with Metro, plus apps found on other Metro ports (8082–8085) |
+| `select_target` | — | Pin a target, optionally on another Metro port; library runtimes (Reanimated) are refused |
 | `clear_buffers` | — | Reset captured data before reproducing a scenario |
 
 ### Navigation
@@ -150,7 +151,7 @@ npm install -g mcp-rn-devtools
 
 | Tool | Source | Description |
 |------|--------|-------------|
-| `evaluate_js` | CDP | Execute JavaScript in the app's global scope |
+| `evaluate_js` | CDP | Execute JavaScript in the app: `global` and `globalThis` both work, `await_promise` settles Promises in-app |
 | `resolve_source_location` | CDP | Resolve bundled line:column to original source via Metro source maps |
 
 ### Building on top of the core
@@ -158,6 +159,16 @@ npm install -g mcp-rn-devtools
 The server exports its building blocks (`ConnectionManager`, `SDKBridgeServer`, the injected agent bridge, adb helpers) so tools can extend it **in the same process** — Hermes admits a single debugger, so extensions must share the CDP session rather than compete for it. Unrecognized SDK-channel messages are re-emitted as `sdk-message` events, and `sendToClient()` lets extensions answer.
 
 The first product built this way is [**tapfix**](https://www.npmjs.com/package/tapfix): a live QA loop for React Native (mark issues on-device or from a cockpit web UI, and an embedded coding agent fixes them on the fly). Its MCP server is a superset of this one.
+
+## Multiple sessions
+
+Hermes admits **one** debugger per app. Every Claude Code session starts its own `mcp-rn-devtools` process, so the server settles who owns the debugger instead of letting instances steal it from each other:
+
+- **The debugger follows the session in use.** An instance attaches on its first tool call (`lazy`, the default). If another instance holds the connection, the caller asks it to yield and takes over; the yielded one gets it back on *its* next tool call. Idle sessions never take the debugger away from the one you are working in.
+- **No orphans.** The server exits when its MCP client goes away (stdin closes or the parent process dies), so stale instances from closed sessions do not linger for days holding the port.
+- `health_check` tells you who owns the debugger and, if an old (pre-0.3) instance is squatting the SDK port, how to kill it.
+
+Extensions that record continuously (tapfix) opt into `connectMode: 'eager'`.
 
 ## Secret Redaction
 
@@ -239,9 +250,11 @@ import { RNDevtoolsProfiler } from 'mcp-rn-devtools-sdk';
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `METRO_PORT` | `8081` | Metro bundler port |
-| `SDK_PORT` | `8098` | SDK WebSocket port |
+| `METRO_PORT` | `8081` | Metro bundler port (when it has no app, ports 8082–8085 are checked too) |
+| `SDK_PORT` | `8098` | SDK WebSocket port — also marks which instance owns the debugger |
+| `MCP_RN_CONNECT` | `lazy` | `lazy` attaches on the first tool call; `eager` attaches at startup |
 | `MCP_RN_NO_REDACT` | - | Disable secret redaction |
+| `MCP_RN_NO_UPDATE_CHECK` | - | Skip the npm "newer version" lookup in `health_check` |
 | `MCP_RN_DEBUG` | - | Enable debug logging |
 
 ## Architecture Notes
@@ -249,7 +262,10 @@ import { RNDevtoolsProfiler } from 'mcp-rn-devtools-sdk';
 - **Target selection:** RN 0.76+ (Fusebox) no longer advertises `vm: 'Hermes'` — the server picks the main runtime by `reactNative.capabilities.prefersFuseboxFrontend` and skips secondary runtimes like Reanimated's. Legacy targets still work via the `vm` field.
 - **Kick-and-poll:** CDP's `awaitPromise` can't resolve React Native's polyfilled Promises, so async in-app operations (AsyncStorage) fire a callback that writes to a result slot, which the server polls.
 - **Clock skew:** log/error entries carry a server-clock `receivedAt` — device clocks can drift seconds from the host, which would break "wait for new logs" cuts.
-- **Reconnection:** exponential backoff, agent re-injected automatically after every bundle reload.
+- **Reconnection:** exponential backoff, agent re-injected automatically after every bundle reload. A pinned target that keeps failing is unpinned after 3 attempts.
+- **Console replay:** `Runtime.enable` replays the runtime's console backlog on every reconnect; entries are deduplicated by (timestamp, message) so warnings do not inflate.
+- **`global` in the evaluate scope:** Hermes exposes `globalThis` but not `global` to `Runtime.evaluate` (Metro only passes `global` to module factories). Injected scripts resolve the global object themselves and `evaluate_js` aliases `global` for the duration of the call.
+- **Multi-Metro:** when nothing listens on the configured port and exactly one other port (8082–8085) has an app, the server switches to it. A running Metro without an app is left alone (the app is about to appear there), and with several candidates it asks you to `select_target` with `metro_port`.
 - **Action log caveat:** the agent wraps `store.dispatch` at discovery time; components that captured a direct `dispatch` reference *before* discovery bypass the log (rare — discovery runs at connect).
 
 ## Compatibility
@@ -259,6 +275,18 @@ import { RNDevtoolsProfiler } from 'mcp-rn-devtools-sdk';
 - **Platforms:** iOS, Android
 - **Node.js:** 20+
 - **MCP Hosts:** Claude Code, Claude Desktop, or any MCP-compatible client
+
+## Development
+
+```bash
+mise install          # node 22 + pnpm 9 from .mise.toml (pnpm 10+ breaks the build)
+pnpm install
+pnpm build            # shared → server → sdk
+pnpm test             # vitest, includes fake Metro/Hermes integration tests
+pnpm typecheck && pnpm lint
+```
+
+Release: bump `version` in the three `packages/*/package.json`, push, and publish a GitHub Release — `publish.yml` runs CI and `pnpm -r publish`.
 
 ## License
 

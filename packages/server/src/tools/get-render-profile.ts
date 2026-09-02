@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from './registrar.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 
-export function registerGetRenderProfile(server: McpServer, cm: ConnectionManager): void {
+export function registerGetRenderProfile(server: ToolRegistrar, cm: ConnectionManager): void {
   server.tool(
     'get_render_profile',
     'Get component render profile data. Requires mcp-rn-devtools-sdk with Profiler wrapping components.',

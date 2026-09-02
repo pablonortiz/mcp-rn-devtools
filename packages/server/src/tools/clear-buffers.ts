@@ -1,10 +1,10 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from './registrar.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 
 const BUFFERS = ['logs', 'errors', 'network', 'actions', 'state', 'renders'] as const;
 
-export function registerClearBuffers(server: McpServer, cm: ConnectionManager): void {
+export function registerClearBuffers(server: ToolRegistrar, cm: ConnectionManager): void {
   server.tool(
     'clear_buffers',
     'Clear captured data buffers (logs, errors, network, actions, state, renders). Call before reproducing a bug so subsequent reads contain only fresh data.',

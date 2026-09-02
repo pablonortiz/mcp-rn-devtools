@@ -1,7 +1,7 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from './registrar.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 
-export function registerGetMemoryUsage(server: McpServer, cm: ConnectionManager): void {
+export function registerGetMemoryUsage(server: ToolRegistrar, cm: ConnectionManager): void {
   server.tool(
     'get_memory_usage',
     'Get current JavaScript heap memory usage from the React Native app.',

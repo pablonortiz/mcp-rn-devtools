@@ -1,9 +1,10 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from './registrar.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 import { redactHeaders, redactText } from '../utils/redact.js';
+import { FULL_PARAM_DESCRIPTION, renderEntries } from './entry-format.js';
 
-export function registerGetNetworkRequests(server: McpServer, cm: ConnectionManager): void {
+export function registerGetNetworkRequests(server: ToolRegistrar, cm: ConnectionManager): void {
   server.tool(
     'get_network_requests',
     'Get HTTP network requests from the running React Native app. Shows URL, method, status and duration; verbose mode adds headers and truncated bodies (secrets redacted).',
@@ -13,9 +14,10 @@ export function registerGetNetworkRequests(server: McpServer, cm: ConnectionMana
       search: z.string().optional().describe('Search string to filter by URL'),
       verbose: z.boolean().optional().default(false)
         .describe('Include request/response headers and truncated bodies'),
+      full: z.boolean().optional().default(false).describe(FULL_PARAM_DESCRIPTION),
     },
     { readOnlyHint: true },
-    async ({ limit, since, search, verbose }) => {
+    async ({ limit, since, search, verbose, full }) => {
       const requests = cm.networkManager.getRequests({ limit, since, search });
 
       if (!cm.connected && !cm.sdkConnected && requests.length === 0) {
@@ -23,7 +25,7 @@ export function registerGetNetworkRequests(server: McpServer, cm: ConnectionMana
           content: [
             {
               type: 'text',
-              text: 'Not connected to a React Native app. Make sure Metro is running and a Hermes-powered app is active.',
+              text: 'Not connected to a React Native app — run health_check for the diagnosis.',
             },
           ],
         };
@@ -60,14 +62,10 @@ export function registerGetNetworkRequests(server: McpServer, cm: ConnectionMana
         return detail.join('\n');
       });
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `${requests.length} network request(s):\n\n${formatted.join('\n')}`,
-          },
-        ],
-      };
+      const text = verbose
+        ? renderEntries('network request(s)', formatted, full)
+        : `${requests.length} network request(s):\n\n${formatted.join('\n')}`;
+      return { content: [{ type: 'text', text }] };
     },
   );
 }

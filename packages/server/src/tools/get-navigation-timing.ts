@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from './registrar.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 
-export function registerGetNavigationTiming(server: McpServer, cm: ConnectionManager): void {
+export function registerGetNavigationTiming(server: ToolRegistrar, cm: ConnectionManager): void {
   server.tool(
     'get_navigation_timing',
     'Get navigation transition timing data — how long each screen transition takes. Requires mcp-rn-devtools-sdk with navigationRef.',

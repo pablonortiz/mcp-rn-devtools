@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from './registrar.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 
-export function registerDispatchAction(server: McpServer, cm: ConnectionManager): void {
+export function registerDispatchAction(server: ToolRegistrar, cm: ConnectionManager): void {
   server.tool(
     'dispatch_action',
     'Dispatch a Redux action to a store discovered by the runtime agent. Useful to reproduce states or trigger flows while debugging.',

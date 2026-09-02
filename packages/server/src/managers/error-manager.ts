@@ -1,52 +1,45 @@
-import type { ErrorEntry } from '@mcp-rn-devtools/shared';
+import type { ErrorEntry, StackFrame } from '@mcp-rn-devtools/shared';
 import { ERROR_BUFFER_SIZE } from '@mcp-rn-devtools/shared';
+import { formatConsoleArgs, type ConsoleArg } from '../cdp/console-args.js';
+import { ReplayFilter } from './replay-filter.js';
+
+interface CDPCallFrame {
+  functionName: string;
+  url: string;
+  lineNumber: number;
+  columnNumber: number;
+  scriptId: string;
+}
 
 export class ErrorManager {
   private errors: ErrorEntry[] = [];
   private warnings: ErrorEntry[] = [];
   private idCounter = 0;
+  private replay = new ReplayFilter();
 
   addFromCDP(params: {
     type: string;
-    args: Array<{ type: string; value?: unknown; description?: string }>;
-    stackTrace?: { callFrames: Array<{ functionName: string; url: string; lineNumber: number; columnNumber: number; scriptId: string }> };
+    args: ConsoleArg[];
+    stackTrace?: { callFrames: CDPCallFrame[] };
     timestamp: number;
   }): void {
-    if (params.type === 'error') {
-      const message = this.formatArgs(params.args);
-      const entry: ErrorEntry = {
-        id: `cdp-err-${++this.idCounter}`,
-        timestamp: params.timestamp,
-        message,
-        stack: params.stackTrace?.callFrames?.map((f) => ({
-          functionName: f.functionName,
-          url: f.url,
-          lineNumber: f.lineNumber,
-          columnNumber: f.columnNumber,
-          scriptId: f.scriptId,
-        })),
-        isFatal: false,
-        source: 'cdp',
-      };
-      this.pushError(entry);
-    } else if (params.type === 'warning') {
-      const message = this.formatArgs(params.args);
-      const entry: ErrorEntry = {
-        id: `cdp-warn-${++this.idCounter}`,
-        timestamp: params.timestamp,
-        message,
-        stack: params.stackTrace?.callFrames?.map((f) => ({
-          functionName: f.functionName,
-          url: f.url,
-          lineNumber: f.lineNumber,
-          columnNumber: f.columnNumber,
-          scriptId: f.scriptId,
-        })),
-        isFatal: false,
-        source: 'cdp',
-      };
-      this.pushWarning(entry);
-    }
+    if (params.type !== 'error' && params.type !== 'warning') return;
+
+    const message = formatConsoleArgs(params.args);
+    if (this.replay.isDuplicate({ timestamp: params.timestamp, message })) return;
+
+    const kind = params.type === 'error' ? 'err' : 'warn';
+    const entry: ErrorEntry = {
+      id: `cdp-${kind}-${++this.idCounter}`,
+      timestamp: params.timestamp,
+      message,
+      stack: this.toStack(params.stackTrace?.callFrames),
+      isFatal: false,
+      source: 'cdp',
+    };
+
+    if (params.type === 'error') this.pushError(entry);
+    else this.pushWarning(entry);
   }
 
   addErrorFromSDK(entry: Omit<ErrorEntry, 'source'>): void {
@@ -90,6 +83,16 @@ export class ErrorManager {
     this.warnings = [];
   }
 
+  private toStack(frames?: CDPCallFrame[]): StackFrame[] | undefined {
+    return frames?.map((f) => ({
+      functionName: f.functionName,
+      url: f.url,
+      lineNumber: f.lineNumber,
+      columnNumber: f.columnNumber,
+      scriptId: f.scriptId,
+    }));
+  }
+
   private filter(
     entries: ErrorEntry[],
     options?: { limit?: number; since?: number; search?: string },
@@ -122,18 +125,5 @@ export class ErrorManager {
     if (this.warnings.length > ERROR_BUFFER_SIZE) {
       this.warnings.shift();
     }
-  }
-
-  private formatArgs(
-    args: Array<{ type: string; value?: unknown; description?: string }>,
-  ): string {
-    return args
-      .map((a) => {
-        if (a.value !== undefined) {
-          return typeof a.value === 'string' ? a.value : JSON.stringify(a.value);
-        }
-        return a.description ?? `[${a.type}]`;
-      })
-      .join(' ');
   }
 }

@@ -1,10 +1,10 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from './registrar.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 
 const POLL_INTERVAL_MS = 250;
 
-export function registerWaitForLog(server: McpServer, cm: ConnectionManager): void {
+export function registerWaitForLog(server: ToolRegistrar, cm: ConnectionManager): void {
   server.tool(
     'wait_for_log',
     'Block until a console log or error matching a pattern appears (only entries newer than the call count). Use it to synchronize with app activity: call it, interact with the app, and it returns the moment the log shows up.',

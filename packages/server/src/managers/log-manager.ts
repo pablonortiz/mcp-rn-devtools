@@ -1,13 +1,24 @@
 import type { ConsoleLogEntry, LogLevel } from '@mcp-rn-devtools/shared';
 import { LOG_BUFFER_SIZE } from '@mcp-rn-devtools/shared';
+import { formatConsoleArgs, type ConsoleArg } from '../cdp/console-args.js';
+import { ReplayFilter } from './replay-filter.js';
+
+// Hermes prints this into the app console for every debugger that is not React
+// Native DevTools — once per connection, pure noise for the reader.
+const HERMES_CLIENT_NOTICE = /NOTE:\s*You are using an unsupported debugging client/;
+
+export function isHermesClientNotice(message: string): boolean {
+  return HERMES_CLIENT_NOTICE.test(message);
+}
 
 export class LogManager {
   private buffer: ConsoleLogEntry[] = [];
   private idCounter = 0;
+  private replay = new ReplayFilter();
 
   addFromCDP(params: {
     type: string;
-    args: Array<{ type: string; value?: unknown; description?: string; preview?: unknown }>;
+    args: Array<ConsoleArg & { preview?: unknown }>;
     stackTrace?: { callFrames: Array<{ functionName: string; url: string; lineNumber: number; columnNumber: number; scriptId: string }> };
     timestamp: number;
   }): ConsoleLogEntry | null {
@@ -17,7 +28,10 @@ export class LogManager {
     // Skip error/warn — those go to ErrorManager
     if (level === 'error' || level === 'warn') return null;
 
-    const message = this.formatArgs(params.args);
+    const message = formatConsoleArgs(params.args);
+    if (isHermesClientNotice(message)) return null;
+    if (this.replay.isDuplicate({ timestamp: params.timestamp, message })) return null;
+
     const entry: ConsoleLogEntry = {
       id: `cdp-log-${++this.idCounter}`,
       timestamp: params.timestamp,
@@ -98,18 +112,5 @@ export class LogManager {
       default:
         return 'log';
     }
-  }
-
-  private formatArgs(
-    args: Array<{ type: string; value?: unknown; description?: string }>,
-  ): string {
-    return args
-      .map((a) => {
-        if (a.value !== undefined) {
-          return typeof a.value === 'string' ? a.value : JSON.stringify(a.value);
-        }
-        return a.description ?? `[${a.type}]`;
-      })
-      .join(' ');
   }
 }

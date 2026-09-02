@@ -1,7 +1,7 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from './registrar.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 
-export function registerTakeHeapSnapshot(server: McpServer, cm: ConnectionManager): void {
+export function registerTakeHeapSnapshot(server: ToolRegistrar, cm: ConnectionManager): void {
   server.tool(
     'take_heap_snapshot',
     'Take a heap snapshot and return a summary with top memory retainers. This may take a few seconds.',

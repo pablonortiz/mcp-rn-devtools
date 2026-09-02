@@ -1,6 +1,7 @@
 import type { ReduxActionEntry } from '@mcp-rn-devtools/shared';
 import type { CDPConnection } from './connection.js';
 import { AGENT_GLOBAL_KEY, AGENT_SCRIPT } from './agent-script.js';
+import { evaluateByValue } from './evaluate.js';
 import { logger } from '../utils/logger.js';
 
 export interface AgentDiscovery {
@@ -35,7 +36,9 @@ export interface AgentStorageResult {
  * RN's polyfilled Promises).
  */
 export class AgentBridge {
+  private static readonly DISCOVERY_COOLDOWN_MS = 5000;
   private requestCounter = 0;
+  private lastEmptyDiscovery = 0;
 
   async inject(cdp: CDPConnection): Promise<boolean> {
     try {
@@ -210,12 +213,17 @@ export class AgentBridge {
     return { done: true, ok: false, error: `${label} timed out after ${timeoutMs}ms` };
   }
 
-  /** Runs discovery if no stores are registered yet (app may render after connect). */
+  /**
+   * Runs discovery if no stores are registered yet (app may render after
+   * connect). Apps without a store would otherwise re-walk the fiber tree on
+   * every call, so a failed discovery is not retried for a few seconds.
+   */
   private async ensureDiscovered(cdp: CDPConnection): Promise<void> {
     const summary = await this.summary(cdp);
-    if (!summary || summary.stores.length === 0) {
-      await this.discover(cdp).catch(() => null);
-    }
+    if (summary && summary.stores.length > 0) return;
+    if (Date.now() - this.lastEmptyDiscovery < AgentBridge.DISCOVERY_COOLDOWN_MS) return;
+    const report = await this.discover(cdp).catch(() => null);
+    if (!report || report.stores.length === 0) this.lastEmptyDiscovery = Date.now();
   }
 
   /**
@@ -239,18 +247,7 @@ export class AgentBridge {
     return (value as string | null) ?? null;
   }
 
-  private async rawEval(cdp: CDPConnection, expression: string): Promise<unknown> {
-    const response = await cdp.send('Runtime.evaluate', {
-      expression,
-      returnByValue: true,
-    });
-    const exceptionDetails = response.exceptionDetails as Record<string, unknown> | undefined;
-    if (exceptionDetails) {
-      const exception = exceptionDetails.exception as Record<string, unknown> | undefined;
-      throw new Error(
-        (exception?.description as string) ?? (exceptionDetails.text as string) ?? 'evaluate failed',
-      );
-    }
-    return (response.result as Record<string, unknown> | undefined)?.value;
+  private rawEval(cdp: CDPConnection, expression: string): Promise<unknown> {
+    return evaluateByValue(cdp, expression);
   }
 }

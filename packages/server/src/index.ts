@@ -1,12 +1,28 @@
 export { createServer } from './server.js';
-export type { ServerOptions } from './server.js';
+export type { ServerOptions, ConnectMode } from './server.js';
 
 // Building blocks for extensions built on top of the core (e.g. tapfix):
 // they share this process's CDP session and SDK channel instead of competing
 // for the single Hermes debugger.
 export { ConnectionManager } from './managers/connection-manager.js';
+export type { ConnectionManagerOptions } from './managers/connection-manager.js';
 export { SDKBridgeServer } from './sdk-bridge/sdk-server.js';
+export { ConnectionOwnership } from './ownership.js';
 export { AgentBridge } from './cdp/agent-bridge.js';
+export { evaluateByValue } from './cdp/evaluate.js';
+export {
+  probeMetro,
+  scanMetroPorts,
+  isMainRuntimeTarget,
+  findReactNativeTarget,
+  DEFAULT_SCAN_PORTS,
+} from './cdp/discovery.js';
+export type { CDPTarget, MetroProbe } from './cdp/discovery.js';
+export { activatingRegistrar } from './tools/registrar.js';
+export type { ToolRegistrar } from './tools/registrar.js';
+export { exitWhenOrphaned } from './utils/process-lifecycle.js';
+export { parseDevServerHint, readDevServerHint } from './utils/dev-server-hint.js';
+export type { DevServerHint } from './utils/dev-server-hint.js';
 export { redact, redactionEnabled } from './utils/redact.js';
 export {
   captureScreenPng,

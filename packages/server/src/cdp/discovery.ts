@@ -14,17 +14,26 @@ export interface CDPTarget {
   };
 }
 
+export interface MetroProbe {
+  reachable: boolean;
+  targets: CDPTarget[];
+}
+
+/** Metro ports tried when the configured one has no app: RN picks the next free port for parallel apps. */
+export const DEFAULT_SCAN_PORTS = [8081, 8082, 8083, 8084, 8085];
+
 /** Distinguishes "Metro is down" from "Metro is up but no app registered an inspector". */
 export async function probeMetro(
   metroPort: number = DEFAULT_METRO_PORT,
-): Promise<{ reachable: boolean; targets: CDPTarget[] }> {
+  timeoutMs: number = 2000,
+): Promise<MetroProbe> {
   const hosts = ['localhost', '127.0.0.1', '[::1]'];
 
   for (const host of hosts) {
     const url = `http://${host}:${metroPort}/json/list`;
     try {
       const response = await fetch(url, {
-        signal: AbortSignal.timeout(2000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
       if (!response.ok) continue;
       const targets: CDPTarget[] = await response.json();
@@ -44,13 +53,38 @@ export async function discoverTargets(
   return (await probeMetro(metroPort)).targets;
 }
 
+/** Reachable Metros among `ports`, probed in parallel with a short timeout. */
+export async function scanMetroPorts(
+  ports: number[],
+  timeoutMs: number = 1000,
+): Promise<Array<{ port: number; targets: CDPTarget[] }>> {
+  const probes = await Promise.all(
+    ports.map(async (port) => ({ port, ...(await probeMetro(port, timeoutMs)) })),
+  );
+  return probes
+    .filter((probe) => probe.reachable)
+    .map(({ port, targets }) => ({ port, targets }));
+}
+
+/**
+ * The app's JS runtime, as opposed to secondary runtimes libraries register
+ * (Reanimated's UI runtime does not even answer Debugger.enable).
+ */
+export function isMainRuntimeTarget(target: CDPTarget): boolean {
+  return (
+    (target.vm === 'Hermes' || Boolean(target.reactNative)) &&
+    !/reanimated/i.test(target.description ?? '')
+  );
+}
+
+export function describeTarget(target: CDPTarget): string {
+  return `${target.id}: ${target.title} (${target.description})`;
+}
+
 export function findReactNativeTarget(targets: CDPTarget[]): CDPTarget | null {
   // RN 0.76+ (Fusebox) no longer sets vm: 'Hermes' — the main runtime is identified
-  // by reactNative.capabilities.prefersFuseboxFrontend. Secondary runtimes registered
-  // by libraries (e.g. "Reanimated UI runtime") must be excluded.
-  const candidates = targets.filter(
-    (t) => (t.vm === 'Hermes' || t.reactNative) && !/reanimated/i.test(t.description ?? ''),
-  );
+  // by reactNative.capabilities.prefersFuseboxFrontend.
+  const candidates = targets.filter(isMainRuntimeTarget);
   if (candidates.length === 0) return null;
 
   const fusebox = candidates.find((t) => t.reactNative?.capabilities?.prefersFuseboxFrontend);

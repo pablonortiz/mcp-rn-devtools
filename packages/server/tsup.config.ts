@@ -6,7 +6,7 @@ export default defineConfig({
   dts: { resolve: ['@mcp-rn-devtools/shared'] },
   clean: true,
   sourcemap: true,
-  target: 'node18',
+  target: 'node20',
   banner: {
     js: "// mcp-rn-devtools server",
   },

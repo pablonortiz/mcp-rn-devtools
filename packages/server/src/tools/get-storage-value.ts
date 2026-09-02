@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from './registrar.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 import type { SDKBridgeServer } from '../sdk-bridge/sdk-server.js';
 import { redactStorageValue } from '../utils/redact.js';
 
 export function registerGetStorageValue(
-  server: McpServer,
+  server: ToolRegistrar,
   cm: ConnectionManager,
   sdkBridge: SDKBridgeServer,
 ): void {

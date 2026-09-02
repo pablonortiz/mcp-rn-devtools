@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from './registrar.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 
-export function registerResolveSourceLocation(server: McpServer, cm: ConnectionManager): void {
+export function registerResolveSourceLocation(server: ToolRegistrar, cm: ConnectionManager): void {
   server.tool(
     'resolve_source_location',
     'Resolve a bundle line/column (e.g. from a CPU profile or stack trace showing index.bundle:69306) back to the original source file and line. Requires Metro to be running.',

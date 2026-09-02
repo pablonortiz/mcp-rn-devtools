@@ -1,6 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 import type { SDKBridgeServer } from '../sdk-bridge/sdk-server.js';
+import type { ConnectionOwnership } from '../ownership.js';
+import { activatingRegistrar } from './registrar.js';
 import { registerGetConsoleLogs } from './get-console-logs.js';
 import { registerGetErrors } from './get-errors.js';
 import { registerGetWarnings } from './get-warnings.js';
@@ -30,37 +32,42 @@ export function registerAllTools(
   server: McpServer,
   cm: ConnectionManager,
   sdkBridge: SDKBridgeServer,
+  ownership: ConnectionOwnership,
 ): void {
+  // Every tool first makes this instance the debugger's owner (lazy connect,
+  // takeover from siblings). The target tools manage the connection themselves.
+  const tools = activatingRegistrar(server, () => ownership.ensure(), ['list_targets', 'select_target']);
+
   // Logging & errors
-  registerGetConsoleLogs(server, cm);
-  registerGetErrors(server, cm);
-  registerGetWarnings(server, cm);
-  registerWaitForLog(server, cm);
+  registerGetConsoleLogs(tools, cm);
+  registerGetErrors(tools, cm);
+  registerGetWarnings(tools, cm);
+  registerWaitForLog(tools, cm);
   // Network
-  registerGetNetworkRequests(server, cm);
-  registerGetFailedRequests(server, cm);
+  registerGetNetworkRequests(tools, cm);
+  registerGetFailedRequests(tools, cm);
   // Diagnostics
-  registerHealthCheck(server, cm, sdkBridge);
-  registerTargetTools(server, cm);
-  registerClearBuffers(server, cm);
+  registerHealthCheck(tools, cm, sdkBridge);
+  registerTargetTools(tools, cm, ownership);
+  registerClearBuffers(tools, cm);
   // Navigation
-  registerGetNavigationState(server, cm, sdkBridge);
-  registerGetNavigationTiming(server, cm);
+  registerGetNavigationState(tools, cm, sdkBridge);
+  registerGetNavigationTiming(tools, cm);
   // Memory / performance
-  registerGetMemoryUsage(server, cm);
-  registerTakeHeapSnapshot(server, cm);
-  registerGetCPUProfile(server, cm);
-  registerForceGC(server, cm);
-  registerGetRenderProfile(server, cm);
+  registerGetMemoryUsage(tools, cm);
+  registerTakeHeapSnapshot(tools, cm);
+  registerGetCPUProfile(tools, cm);
+  registerForceGC(tools, cm);
+  registerGetRenderProfile(tools, cm);
   // State
-  registerGetAppState(server, cm, sdkBridge);
-  registerGetStateDiff(server, cm, sdkBridge);
-  registerGetActionLog(server, cm);
-  registerDispatchAction(server, cm);
+  registerGetAppState(tools, cm, sdkBridge);
+  registerGetStateDiff(tools, cm, sdkBridge);
+  registerGetActionLog(tools, cm);
+  registerDispatchAction(tools, cm);
   // Storage
-  registerGetStorageKeys(server, cm, sdkBridge);
-  registerGetStorageValue(server, cm, sdkBridge);
+  registerGetStorageKeys(tools, cm, sdkBridge);
+  registerGetStorageValue(tools, cm, sdkBridge);
   // Runtime
-  registerEvaluateJS(server, cm);
-  registerResolveSourceLocation(server, cm);
+  registerEvaluateJS(tools, cm);
+  registerResolveSourceLocation(tools, cm);
 }

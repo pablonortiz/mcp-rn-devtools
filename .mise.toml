@@ -1,0 +1,5 @@
+# pnpm 10+ ignores the package.json "pnpm" field and refuses esbuild's build
+# script, so the monorepo builds only with pnpm 9.
+[tools]
+node = "22"
+pnpm = "9"

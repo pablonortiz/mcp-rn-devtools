@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from './registrar.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 
-export function registerGetCPUProfile(server: McpServer, cm: ConnectionManager): void {
+export function registerGetCPUProfile(server: ToolRegistrar, cm: ConnectionManager): void {
   server.tool(
     'get_cpu_profile',
     'Profile CPU usage for a given duration and return the hottest functions sorted by self time.',

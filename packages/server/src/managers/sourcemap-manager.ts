@@ -20,6 +20,13 @@ export class SourceMapManager {
     this.metroPort = metroPort;
   }
 
+  /** Follows the connection when it moves to another Metro; cached maps belong to the old one. */
+  setMetroPort(metroPort: number): void {
+    if (metroPort === this.metroPort) return;
+    this.metroPort = metroPort;
+    this.invalidate();
+  }
+
   /**
    * Resolves a position inside a specific bundle — the URL a Hermes stack frame
    * names. Lazy bundles (RN 0.76+) have their own maps whose lines differ from

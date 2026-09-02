@@ -6,13 +6,18 @@ import {
   GLOBAL_INJECTED_KEY,
 } from '@mcp-rn-devtools/shared';
 import type { CDPConnection } from '../cdp/connection.js';
+import { evaluateByValue } from '../cdp/evaluate.js';
 import { logger } from '../utils/logger.js';
 
-const NETWORK_INTERCEPTOR_SCRIPT = `
+// `global` is not a binding in Hermes' evaluate scope (Metro only passes it to
+// module factories), so the scripts resolve the global object themselves.
+export const NETWORK_INTERCEPTOR_SCRIPT = `
 (function() {
-  if (global.${GLOBAL_INJECTED_KEY}) return true;
-  global.${GLOBAL_INJECTED_KEY} = true;
-  global.${GLOBAL_NETWORK_KEY} = [];
+  var g = (typeof globalThis !== 'undefined' ? globalThis : this);
+  if (g.${GLOBAL_INJECTED_KEY}) return true;
+  if (typeof g.XMLHttpRequest !== 'function') return false;
+  g.${GLOBAL_INJECTED_KEY} = true;
+  g.${GLOBAL_NETWORK_KEY} = [];
 
   var _id = 0;
   var origOpen = XMLHttpRequest.prototype.open;
@@ -60,30 +65,31 @@ const NETWORK_INTERCEPTOR_SCRIPT = `
             entry.responseBody = typeof this.responseText === 'string' ? this.responseText.substring(0, 4096) : null;
           }
         } catch(e) {}
-        global.${GLOBAL_NETWORK_KEY}.push(entry);
+        g.${GLOBAL_NETWORK_KEY}.push(entry);
       });
       this.addEventListener('error', function() {
         entry.error = 'Network error';
         entry.endTime = Date.now();
         entry.duration = entry.endTime - entry.startTime;
-        global.${GLOBAL_NETWORK_KEY}.push(entry);
+        g.${GLOBAL_NETWORK_KEY}.push(entry);
       });
       this.addEventListener('timeout', function() {
         entry.error = 'Timeout';
         entry.endTime = Date.now();
         entry.duration = entry.endTime - entry.startTime;
-        global.${GLOBAL_NETWORK_KEY}.push(entry);
+        g.${GLOBAL_NETWORK_KEY}.push(entry);
       });
     }
     return origSend.apply(this, arguments);
   };
-  true;
+  return true;
 })()
 `;
 
-const DRAIN_SCRIPT = `
+export const DRAIN_SCRIPT = `
 (function() {
-  var arr = global.${GLOBAL_NETWORK_KEY};
+  var g = (typeof globalThis !== 'undefined' ? globalThis : this);
+  var arr = g.${GLOBAL_NETWORK_KEY};
   if (!arr || arr.length === 0) return JSON.stringify([]);
   var items = arr.splice(0, arr.length);
   return JSON.stringify(items);
@@ -94,6 +100,12 @@ export class NetworkManager {
   private buffer: NetworkRequest[] = [];
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private sdkConnected = false;
+  private _interceptorInstalled = false;
+
+  /** True once the zero-config XHR interceptor is confirmed running in the app. */
+  get interceptorInstalled(): boolean {
+    return this._interceptorInstalled;
+  }
 
   addFromSDK(request: Omit<NetworkRequest, 'source'>): void {
     this.push({ ...request, source: 'sdk' });
@@ -151,16 +163,17 @@ export class NetworkManager {
     this.sdkConnected = connected;
   }
 
-  async injectInterceptor(cdp: CDPConnection): Promise<void> {
+  async injectInterceptor(cdp: CDPConnection): Promise<boolean> {
     try {
-      await cdp.send('Runtime.evaluate', {
-        expression: NETWORK_INTERCEPTOR_SCRIPT,
-        returnByValue: true,
-      });
-      logger.info('Network interceptor injected via CDP');
+      const installed = await evaluateByValue(cdp, NETWORK_INTERCEPTOR_SCRIPT);
+      this._interceptorInstalled = installed === true;
+      if (this._interceptorInstalled) logger.info('Network interceptor injected via CDP');
+      else logger.warn('Network interceptor not installed: XMLHttpRequest is not available in this runtime');
     } catch (e) {
-      logger.warn('Failed to inject network interceptor', e);
+      this._interceptorInstalled = false;
+      logger.warn('Failed to inject network interceptor', (e as Error).message);
     }
+    return this._interceptorInstalled;
   }
 
   startPolling(cdp: CDPConnection): void {
@@ -168,11 +181,7 @@ export class NetworkManager {
     this.pollTimer = setInterval(async () => {
       if (this.sdkConnected) return; // SDK handles network when connected
       try {
-        const result = await cdp.send('Runtime.evaluate', {
-          expression: DRAIN_SCRIPT,
-          returnByValue: true,
-        });
-        const value = (result.result as Record<string, unknown> | undefined)?.value as string | undefined;
+        const value = (await evaluateByValue(cdp, DRAIN_SCRIPT)) as string | undefined;
         if (value) {
           const requests: NetworkRequest[] = JSON.parse(value);
           for (const req of requests) {
@@ -190,6 +199,12 @@ export class NetworkManager {
       clearInterval(this.pollTimer);
       this.pollTimer = null;
     }
+  }
+
+  /** The runtime is gone (disconnect, reload, yield): the interceptor must be injected again. */
+  detach(): void {
+    this.stopPolling();
+    this._interceptorInstalled = false;
   }
 
   clear(): void {

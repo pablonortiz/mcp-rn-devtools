@@ -1,9 +1,11 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from './registrar.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
 import { redact } from '../utils/redact.js';
+import { joinWithinBudget } from '../utils/text.js';
+import { OUTPUT_CHARS } from './entry-format.js';
 
-export function registerGetActionLog(server: McpServer, cm: ConnectionManager): void {
+export function registerGetActionLog(server: ToolRegistrar, cm: ConnectionManager): void {
   server.tool(
     'get_action_log',
     'Get Redux action dispatch log. Shows action types, reducer duration, and which state slices changed. Zero-config: the runtime agent records dispatches automatically once a store is discovered.',
@@ -76,14 +78,9 @@ export function registerGetActionLog(server: McpServer, cm: ConnectionManager): 
         return `[${time}] ${a.actionType} (${a.duration}ms)${changed}`;
       });
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `${actions.length} action(s):\n\n${formatted.join('\n')}`,
-          },
-        ],
-      };
+      const { text, omitted } = joinWithinBudget(formatted, OUTPUT_CHARS, '\n');
+      const note = omitted > 0 ? ` (showing the newest ${actions.length - omitted}; narrow with search/since/limit)` : '';
+      return { content: [{ type: 'text', text: `${actions.length} action(s)${note}:\n\n${text}` }] };
     },
   );
 }

@@ -1,8 +1,9 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from './registrar.js';
 import type { ConnectionManager } from '../managers/connection-manager.js';
+import { FULL_PARAM_DESCRIPTION, formatErrorEntry, notConnectedHint, renderEntries } from './entry-format.js';
 
-export function registerGetErrors(server: McpServer, cm: ConnectionManager): void {
+export function registerGetErrors(server: ToolRegistrar, cm: ConnectionManager): void {
   server.tool(
     'get_errors',
     'Get JavaScript errors and exceptions from the running React Native app. Includes RedBox errors captured via console.error.',
@@ -10,42 +11,19 @@ export function registerGetErrors(server: McpServer, cm: ConnectionManager): voi
       limit: z.number().optional().default(50).describe('Max number of entries to return'),
       since: z.number().optional().describe('Only return entries after this timestamp (ms)'),
       search: z.string().optional().describe('Search string to filter error messages'),
+      full: z.boolean().optional().default(false).describe(FULL_PARAM_DESCRIPTION),
     },
     { readOnlyHint: true },
-    async ({ limit, since, search }) => {
+    async ({ limit, since, search, full }) => {
       const errors = cm.errorManager.getErrors({ limit, since, search });
 
       if (errors.length === 0) {
-        const sources: string[] = [];
-        if (cm.connected) sources.push('CDP');
-        if (cm.sdkConnected) sources.push('SDK');
-        const status = sources.length > 0
-          ? `Connected via ${sources.join(' + ')}.`
-          : 'Not connected to a React Native app. Make sure Metro is running and the SDK is installed.';
-        return {
-          content: [{ type: 'text', text: `No errors found. ${status}` }],
-        };
+        return { content: [{ type: 'text', text: notConnectedHint(cm, 'errors') }] };
       }
 
-      const formatted = errors.map((err) => {
-        const time = new Date(err.timestamp).toISOString();
-        const fatal = err.isFatal ? ' [FATAL]' : '';
-        const stack = err.stack?.length
-          ? `\n  at ${err.stack.map((f) => `${f.functionName || '<anonymous>'} (${f.url}:${f.lineNumber}:${f.columnNumber})`).join('\n  at ')}`
-          : '';
-        const component = err.componentStack
-          ? `\nComponent stack: ${err.componentStack}`
-          : '';
-        return `[${time}]${fatal} ${err.message}${stack}${component}`;
-      });
-
+      const blocks = errors.map((error) => formatErrorEntry(error, full));
       return {
-        content: [
-          {
-            type: 'text',
-            text: `${errors.length} error(s):\n\n${formatted.join('\n\n')}`,
-          },
-        ],
+        content: [{ type: 'text', text: renderEntries('error(s)', blocks, full) }],
       };
     },
   );
