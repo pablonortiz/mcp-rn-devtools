@@ -155,8 +155,40 @@ export interface QAReportElement {
   props: Record<string, unknown>;
   /** Flattened style of the selected level, when the element has one. */
   style: Record<string, unknown> | null;
-  /** JSX source location when the renderer still provides one (pre-React 19). */
-  source: { fileName?: string; lineNumber?: number; columnNumber?: number } | null;
+  /**
+   * Where the selected element is rendered from. Pre-React 19 renderers give
+   * fileName/lineNumber directly; React 19 only exposes a bundle position
+   * (from the fiber's _debugStack) that the server resolves through the source map.
+   */
+  source: {
+    fileName?: string;
+    lineNumber?: number;
+    columnNumber?: number;
+    bundleUrl?: string;
+    bundleLine?: number;
+    bundleColumn?: number;
+    functionName?: string | null;
+  } | null;
+}
+
+/** Another element inside an area mark, besides the primary one. */
+export interface QARelatedElement {
+  name: string;
+  frame: QAElementFrame;
+  hierarchy: string[];
+}
+
+/** Runtime activity captured between "record" and the report — for functional bugs. */
+export interface QARecording {
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  actions: ReduxActionEntry[];
+  network: Array<Pick<NetworkRequest, 'url' | 'method' | 'status' | 'duration' | 'error' | 'startTime'>>;
+  logs: Array<Pick<ConsoleLogEntry, 'level' | 'message' | 'timestamp'>>;
+  errors: Array<Pick<ErrorEntry, 'message' | 'isFatal' | 'timestamp' | 'componentStack'>>;
+  /** Screen recording file name inside the report directory, when captured. */
+  video?: string | null;
 }
 
 export interface QAReportPayload {
@@ -166,6 +198,8 @@ export interface QAReportPayload {
   screen: { width: number; height: number; scale: number };
   /** Reference images the tester attached, as data URLs — extracted to files at capture time, never persisted inline. */
   attachments?: string[];
+  /** Other elements inside the marked area (area marks from the cockpit). */
+  relatedElements?: QARelatedElement[];
 }
 
 /** A captured report after server-side enrichment, as persisted to disk. */
@@ -198,6 +232,23 @@ export interface QAReport {
   reverted?: boolean;
   /** File names of tester-attached reference images inside the report directory. */
   attachments?: string[];
+  /** Other elements inside the marked area (area marks). */
+  relatedElements?: QARelatedElement[];
+  /** Runtime activity recorded before the report (functional bugs). */
+  recording?: QARecording;
+  /** Who is acting on the report: 'agent' (embedded runner) or 'session' (a Claude Code session). Prevents double processing. */
+  claimedBy?: string;
+  claimedAt?: string;
+  /** What the agent last said about this report when it did NOT resolve it (a question, a blocker). */
+  agentReply?: string;
+  /** Last turn failure for this report. */
+  lastError?: string;
+  attempts?: number;
+  /** Auto-verify outcome after the fix (before/after comparison by the agent). */
+  verified?: boolean;
+  verifyReason?: string;
+  /** Commit sha that included this fix, when committed from the cockpit. */
+  committed?: string;
 }
 
 // Phase 5d: Storage

@@ -16,14 +16,14 @@ export const AGENT_SCRIPT = `
   var g = (typeof globalThis !== 'undefined' ? globalThis : global);
   // Reinstall over older agents so new capabilities (qa hit-testing) land on reconnect
   var old = g.${AGENT_GLOBAL_KEY};
-  if (old && old.version >= 2) return 'already-installed';
+  if (old && old.version >= 3) return 'already-installed';
 
   var MAX_ACTIONS = 500;
 
   // Inherit wrapped stores/actions by reference: the old dispatch wrappers keep
   // pushing into the same arrays, so nothing recorded is lost on reinstall.
   var agent = {
-    version: 2,
+    version: 3,
     stores: (old && old.stores) || {},
     queryClient: (old && old.queryClient) || null,
     navigation: (old && old.navigation) || null,
@@ -230,6 +230,36 @@ export const AGENT_SCRIPT = `
     }
   };
 
+  // The bundle URL the app actually loaded (platform, lazy, app id…) — the key
+  // to its exact source map without guessing query params.
+  agent.scriptUrlJson = function() {
+    var mod = null;
+    try { if (typeof g.__turboModuleProxy === 'function') mod = g.__turboModuleProxy('SourceCode'); } catch (e) {}
+    if (!mod) { try { if (g.nativeModuleProxy) mod = g.nativeModuleProxy.SourceCode; } catch (e2) {} }
+    var url = null;
+    try {
+      var constants = mod && typeof mod.getConstants === 'function' ? mod.getConstants() : mod;
+      url = constants && constants.scriptURL ? String(constants.scriptURL) : null;
+    } catch (e3) {}
+    return JSON.stringify({ url: url });
+  };
+
+  agent.qaNavigateJson = function(name, params) {
+    if (!agent.navigation) { try { agent.discover(); } catch (e0) {} }
+    var nav = agent.navigation;
+    if (!nav) return JSON.stringify({ ok: false, error: 'navigation container not found' });
+    try {
+      if (typeof nav.isReady === 'function' && !nav.isReady()) {
+        return JSON.stringify({ ok: false, notReady: true, error: 'navigation not ready yet' });
+      }
+      if (typeof nav.navigate !== 'function') return JSON.stringify({ ok: false, error: 'container has no navigate()' });
+      nav.navigate(name, params || undefined);
+      return JSON.stringify({ ok: true });
+    } catch (e) {
+      return JSON.stringify({ ok: false, error: String(e) });
+    }
+  };
+
   function storageModule() {
     var mod = null;
     try { if (typeof g.__turboModuleProxy === 'function') mod = g.__turboModuleProxy('RNCAsyncStorage'); } catch (e) {}
@@ -274,6 +304,44 @@ export const AGENT_SCRIPT = `
   // ---- QA hit-testing (zero-config element inspection for the cockpit) ----
 
   agent.qaHierarchy = null;
+  agent.qaOwners = null;
+
+  // Frames React itself adds on top of the JSX call site (React 19 _debugStack)
+  var RUNTIME_FRAME = /^\\s*at\\s+(jsxDEV|jsxDEVImpl|jsx|jsxs|jsxWithValidation|createElement|createElementWithValidation|react-stack-top-frame|Error)\\b/;
+
+  // Same walk RN's inspector uses to build viewData.hierarchy (root owner first), so
+  // indices line up with viewData.hierarchy and we can reach the fibers.
+  function ownerChain(fiber) {
+    var owners = [];
+    var guard = 0;
+    while (fiber && guard++ < 500) {
+      owners.unshift(fiber);
+      fiber = fiber._debugOwner;
+    }
+    return owners;
+  }
+
+  // Where the element's JSX lives: React 18 gives it directly, React 19 only
+  // via the creation stack — we return the raw bundle position for the server
+  // to resolve through Metro's source map.
+  function debugSourceOf(fiber) {
+    if (!fiber) return null;
+    var legacy = fiber._debugSource;
+    if (legacy && legacy.fileName) {
+      return { fileName: legacy.fileName, lineNumber: legacy.lineNumber || null, columnNumber: legacy.columnNumber || null };
+    }
+    var stack = fiber._debugStack;
+    var text = stack ? (typeof stack === 'string' ? stack : stack.stack) : null;
+    if (!text) return null;
+    var lines = String(text).split('\\n');
+    for (var i = 0; i < lines.length; i++) {
+      if (RUNTIME_FRAME.test(lines[i])) continue;
+      var m = /at\\s+(?:(\\S+)\\s+\\()?(?:address at )?(https?:\\/\\/[^\\s)]+?):(\\d+):(\\d+)\\)?/.exec(lines[i]);
+      if (!m) continue;
+      return { bundleUrl: m[2], bundleLine: Number(m[3]), bundleColumn: Number(m[4]), functionName: m[1] || null };
+    }
+    return null;
+  }
 
   function flattenStyle(st) {
     if (!st) return null;
@@ -353,11 +421,15 @@ export const AGENT_SCRIPT = `
           if (!viewData || !viewData.hierarchy || viewData.hierarchy.length === 0) return false;
           handled = true;
           agent.qaHierarchy = viewData.hierarchy;
+          var owners = viewData.closestInstance ? ownerChain(viewData.closestInstance) : [];
+          agent.qaOwners = owners.length === viewData.hierarchy.length ? owners : null;
           var names = [];
           for (var n = 0; n < viewData.hierarchy.length; n++) names.push(viewData.hierarchy[n].name || 'Unknown');
           var selectedIndex = viewData.selectedIndex != null ? viewData.selectedIndex : names.length - 1;
           var level = {};
           try { level = serializeLevel(levelData(viewData.hierarchy[selectedIndex])); } catch (e) {}
+          var source = null;
+          try { source = debugSourceOf(agent.qaOwners && agent.qaOwners[selectedIndex]); } catch (e3) {}
           done(true, {
             frame: viewData.frame,
             hierarchy: names,
@@ -365,7 +437,8 @@ export const AGENT_SCRIPT = `
             selectedName: names[selectedIndex],
             componentStack: String(viewData.componentStack || '').slice(0, 4000),
             props: level.props || {},
-            style: level.style || null
+            style: level.style || null,
+            source: source
           });
           return true;
         });
@@ -386,6 +459,8 @@ export const AGENT_SCRIPT = `
     try {
       var data = levelData(agent.qaHierarchy[index]);
       var level = serializeLevel(data);
+      var source = null;
+      try { source = debugSourceOf(agent.qaOwners && agent.qaOwners[index]); } catch (e4) {}
       var finished = false;
       data.measure(function(mx, my, width, height, left, top) {
         finished = true;
@@ -393,11 +468,12 @@ export const AGENT_SCRIPT = `
           frame: { top: top, left: left, width: width, height: height },
           name: agent.qaHierarchy[index].name || 'Unknown',
           props: level.props,
-          style: level.style
+          style: level.style,
+          source: source
         });
       });
       setTimeout(function() {
-        if (!finished) done(true, { frame: null, name: agent.qaHierarchy[index].name || 'Unknown', props: level.props, style: level.style });
+        if (!finished) done(true, { frame: null, name: agent.qaHierarchy[index].name || 'Unknown', props: level.props, style: level.style, source: source });
       }, 400);
     } catch (e) {
       done(false, null, String(e));

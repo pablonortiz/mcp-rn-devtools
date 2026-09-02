@@ -169,6 +169,15 @@ export interface RequestNavigationStateMessage extends SDKMessage {
   payload: Record<string, never>;
 }
 
+/** Server → SDK: navigate to a screen (tapfix returns to a report's screen after a reload). */
+export interface RequestNavigateMessage extends SDKMessage {
+  type: 'request:navigate';
+  payload: {
+    name: string;
+    params?: Record<string, unknown>;
+  };
+}
+
 // Phase 5c: Request state (Server → SDK)
 export interface RequestStateMessage extends SDKMessage {
   type: 'request:state';
@@ -216,6 +225,7 @@ export type ServerToSDKMessage =
   | HandshakeAckMessage
   | PingMessage
   | RequestNavigationStateMessage
+  | RequestNavigateMessage
   | RequestStateMessage
   | RequestStorageKeysMessage
   | RequestStorageValueMessage

@@ -113,6 +113,27 @@ export class AgentBridge {
     return json ? JSON.parse(json) : null;
   }
 
+  /** URL of the JS bundle the app loaded (from the SourceCode native module). */
+  async getScriptUrl(cdp: CDPConnection): Promise<string | null> {
+    const json = await this.agentEval(cdp, `a.scriptUrlJson()`);
+    if (!json) return null;
+    const parsed = JSON.parse(json) as { url?: string | null };
+    return parsed.url ?? null;
+  }
+
+  /** Navigates through the discovered React Navigation container (zero-config return to a screen). */
+  async qaNavigate(
+    cdp: CDPConnection,
+    name: string,
+    params?: Record<string, unknown>,
+  ): Promise<{ ok: boolean; notReady?: boolean; error?: string }> {
+    const json = await this.agentEval(
+      cdp,
+      `a.qaNavigateJson(${JSON.stringify(name)}, ${JSON.stringify(params ?? null)})`,
+    );
+    return json ? JSON.parse(json) : { ok: false, error: 'agent not available' };
+  }
+
   async storageOp(
     cdp: CDPConnection,
     op: 'keys' | 'get' | 'set' | 'remove',

@@ -1,7 +1,7 @@
 import { SourceMapConsumer, type RawSourceMap } from 'source-map';
 import { logger } from '../utils/logger.js';
 
-interface SourceLocation {
+export interface SourceLocation {
   source: string;
   line: number;
   column: number;
@@ -14,9 +14,73 @@ export class SourceMapManager {
   private metroPort: number;
   private lastFetchTime = 0;
   private readonly CACHE_TTL_MS = 60_000; // re-fetch after 1 minute (hot reload)
+  private urlConsumers = new Map<string, { consumer: SourceMapConsumer; loadedAt: number }>();
 
   constructor(metroPort: number) {
     this.metroPort = metroPort;
+  }
+
+  /**
+   * Resolves a position inside a specific bundle — the URL a Hermes stack frame
+   * names. Lazy bundles (RN 0.76+) have their own maps whose lines differ from
+   * index.map, so the frame's own URL is the only reliable key.
+   */
+  async resolveAtUrl(bundleUrl: string, line: number, column: number = 0): Promise<SourceLocation | null> {
+    const consumer = await this.consumerForUrl(bundleUrl);
+    if (!consumer) return this.resolve(line, column);
+
+    const pos = consumer.originalPositionFor({ line, column });
+    if (!pos.source) return null;
+    return { source: pos.source, line: pos.line ?? 0, column: pos.column ?? 0, name: pos.name };
+  }
+
+  /**
+   * Project root inferred from the map: the directory shared by every
+   * non-node_modules source. Pass the app's real bundle URL to avoid asking
+   * Metro for a platform it may not be serving.
+   */
+  async getProjectRoot(bundleUrl?: string): Promise<string | null> {
+    const cached = this.urlConsumers.values().next().value?.consumer;
+    const consumer = bundleUrl ? await this.consumerForUrl(bundleUrl) : cached ?? (await this.getConsumer());
+    if (!consumer) return null;
+    // `sources` lives on the concrete consumers, not on the base interface the typings expose
+    return commonSourceRoot((consumer as unknown as { sources?: string[] }).sources ?? []);
+  }
+
+  private async consumerForUrl(bundleUrl: string): Promise<SourceMapConsumer | null> {
+    const mapUrl = this.mapUrlFor(bundleUrl);
+    if (!mapUrl) return null;
+
+    const cached = this.urlConsumers.get(mapUrl);
+    if (cached && Date.now() - cached.loadedAt < this.CACHE_TTL_MS) return cached.consumer;
+
+    try {
+      const response = await fetch(mapUrl, { signal: AbortSignal.timeout(20000) });
+      if (!response.ok) return cached?.consumer ?? null;
+      const map = JSON.parse(await response.text()) as RawSourceMap;
+      if (!map.mappings) return cached?.consumer ?? null;
+
+      cached?.consumer.destroy();
+      const consumer = await new SourceMapConsumer(map);
+      this.urlConsumers.set(mapUrl, { consumer, loadedAt: Date.now() });
+      return consumer;
+    } catch (e) {
+      logger.debug('Failed to load source map for bundle', (e as Error).message);
+      return cached?.consumer ?? null;
+    }
+  }
+
+  /** The device reaches Metro through its own host (10.0.2.2, localhost via adb reverse…); we always go through localhost. */
+  private mapUrlFor(bundleUrl: string): string | null {
+    try {
+      const url = new URL(bundleUrl);
+      url.hostname = 'localhost';
+      url.port = String(this.metroPort);
+      url.pathname = url.pathname.replace(/\.bundle$/, '.map');
+      return url.pathname.endsWith('.map') ? url.toString() : null;
+    } catch {
+      return null;
+    }
   }
 
   async resolve(
@@ -61,6 +125,8 @@ export class SourceMapManager {
       this.consumer = null;
     }
     this.lastFetchTime = 0;
+    for (const entry of this.urlConsumers.values()) entry.consumer.destroy();
+    this.urlConsumers.clear();
   }
 
   private async getConsumer(): Promise<SourceMapConsumer | null> {
@@ -135,4 +201,22 @@ export class SourceMapManager {
     logger.debug('Could not fetch source map from Metro');
     return null;
   }
+}
+
+/** Longest directory prefix shared by the project's own sources (absolute Metro paths). */
+export function commonSourceRoot(sources: string[]): string | null {
+  const own = sources.filter(
+    (source) => source.startsWith('/') && !source.includes('/node_modules/') && !source.includes('__prelude__'),
+  );
+  if (own.length === 0) return null;
+
+  let prefix = own[0].split('/').slice(0, -1);
+  for (const source of own.slice(1)) {
+    const parts = source.split('/');
+    let shared = 0;
+    while (shared < prefix.length && shared < parts.length && prefix[shared] === parts[shared]) shared++;
+    prefix = prefix.slice(0, shared);
+    if (prefix.length <= 1) return null;
+  }
+  return prefix.join('/') || null;
 }

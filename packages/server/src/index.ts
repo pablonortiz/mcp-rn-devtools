@@ -16,8 +16,10 @@ export {
   findAdb,
   firstDevice,
   listDevices,
+  startScreenRecord,
 } from './utils/adb.js';
-export type { AdbDevice, DeviceScreenInfo } from './utils/adb.js';
+export type { AdbDevice, DeviceScreenInfo, ScreenRecording } from './utils/adb.js';
+export type { SourceLocation } from './managers/sourcemap-manager.js';
 export { captureAdbScreenshot } from './utils/adb-screenshot.js';
 export { logger } from './utils/logger.js';
 
@@ -29,6 +31,8 @@ export type {
   QAReportMode,
   QAReportStatus,
   QAElementFrame,
+  QARelatedElement,
+  QARecording,
   NavigationState,
   SDKMessage,
 } from '@mcp-rn-devtools/shared';

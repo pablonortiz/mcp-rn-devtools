@@ -6,6 +6,7 @@ interface NavigationContainerRef {
   getRootState: () => any;
   getCurrentRoute: () => { name: string; key: string; params?: Record<string, unknown> } | undefined;
   addListener: (event: string, callback: (...args: any[]) => void) => () => void;
+  navigate?: (name: string, params?: Record<string, unknown>) => void;
 }
 
 function extractState(ref: NavigationContainerRef): NavigationState | null {
@@ -68,6 +69,15 @@ export function connectNavigation(
   const unsubscribeMessages = client.onMessage((msg) => {
     if (msg.type === 'request:navigation-state') {
       sendState();
+    } else if (msg.type === 'request:navigate') {
+      const { name, params } = (msg.payload ?? {}) as { name?: string; params?: Record<string, unknown> };
+      if (name && typeof ref.navigate === 'function') {
+        try {
+          ref.navigate(name, params);
+        } catch {
+          // unknown route or navigator not ready — nothing to do from here
+        }
+      }
     }
   });
 

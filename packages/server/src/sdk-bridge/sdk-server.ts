@@ -355,6 +355,18 @@ export class SDKBridgeServer extends EventEmitter {
     return this.connectionManager.storageManager.waitForValue(requestId, timeoutMs);
   }
 
+  /** Asks the on-device SDK to navigate — tapfix uses it to return to a report's screen after a reload. */
+  navigate(name: string, params?: Record<string, unknown>): boolean {
+    if (!this.client) return false;
+    this.sendToClient({
+      type: 'request:navigate',
+      payload: { name, params },
+      timestamp: Date.now(),
+      id: `nav-go-${Date.now()}`,
+    });
+    return true;
+  }
+
   private requestNavigationState(): void {
     this.sendToClient({
       type: 'request:navigation-state',
