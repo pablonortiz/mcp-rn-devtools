@@ -1,4 +1,6 @@
 import { readFileSync } from 'fs';
+import { tmpdir } from 'os';
+import path from 'path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -17,5 +19,7 @@ export default defineConfig({
   test: {
     globals: true,
     include: ['packages/*/test/**/*.test.ts'],
+    // Servers created without an explicit stateDir must never touch the real instance registry
+    env: { MCP_RN_STATE_DIR: path.join(tmpdir(), 'mcp-rn-devtools-test-registry') },
   },
 });
