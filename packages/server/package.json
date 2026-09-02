@@ -1,7 +1,7 @@
 {
   "name": "mcp-rn-devtools",
-  "version": "0.2.2",
-  "description": "MCP server for React Native runtime debugging — zero-config access to Redux state, AsyncStorage, actions, logs, network, and profiling from your running app",
+  "version": "0.3.0",
+  "description": "MCP server for React Native runtime debugging \u2014 zero-config access to Redux state, AsyncStorage, actions, logs, network, and profiling from your running app",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -36,7 +36,7 @@
     "metro"
   ],
   "license": "MIT",
-  "author": "Pablo Nicolás Ortiz (https://github.com/pablonortiz)",
+  "author": "Pablo Nicol\u00e1s Ortiz (https://github.com/pablonortiz)",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/pablonortiz/mcp-rn-devtools.git",
