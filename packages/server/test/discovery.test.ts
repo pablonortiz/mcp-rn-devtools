@@ -94,7 +94,7 @@ describe('findReactNativeTarget', () => {
     const targets: CDPTarget[] = [
       {
         id: 'abc123-1',
-        title: 'in.janis.delivery.beta (sdk_gphone16k_arm64)',
+        title: 'com.example.courier.beta (sdk_gphone16k_arm64)',
         description: 'React Native Bridgeless [C++ connection]',
         type: 'node',
         webSocketDebuggerUrl: 'ws://localhost:8081/inspector/debug?device=abc123&page=1',
@@ -109,7 +109,7 @@ describe('findReactNativeTarget', () => {
       },
       {
         id: 'abc123-2',
-        title: 'in.janis.delivery.beta (sdk_gphone16k_arm64)',
+        title: 'com.example.courier.beta (sdk_gphone16k_arm64)',
         description: 'Reanimated UI runtime [C++ connection]',
         type: 'node',
         webSocketDebuggerUrl: 'ws://localhost:8081/inspector/debug?device=abc123&page=2',

@@ -215,7 +215,7 @@ export interface QAReportPayload {
 export interface QAReport {
   id: string;
   createdAt: string;
-  /** Application id from the SDK handshake (e.g. "in.janis.picking.beta"). */
+  /** Application id from the SDK handshake (e.g. "com.example.shop.beta"). */
   app: string;
   status: QAReportStatus;
   note: string;

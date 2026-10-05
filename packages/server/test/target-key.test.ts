@@ -16,6 +16,6 @@ describe('target identity', () => {
   });
 
   it('describes the app on its device', () => {
-    expect(describeTargetApp(fuseboxTarget('1', 'ws://x', { appId: 'in.janis.wms.beta', deviceName: 'Pixel 8a - 15 - API 35' }))).toBe('in.janis.wms.beta @ Pixel 8a - 15 - API 35');
+    expect(describeTargetApp(fuseboxTarget('1', 'ws://x', { appId: 'com.example.stock.beta', deviceName: 'Pixel 8a - 15 - API 35' }))).toBe('com.example.stock.beta @ Pixel 8a - 15 - API 35');
   });
 });

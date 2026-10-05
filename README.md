@@ -166,7 +166,7 @@ Hermes admits **one** debugger per app instance, and every Claude Code session s
 
 - **Sessions on different apps coexist.** Two emulators, two apps, two sessions: each holds its own debugger. Instances register in `~/.mcp-rn-devtools/instances/` and ask each other to yield through a per-instance control endpoint — only the one holding *that* app is asked.
 - **The debugger follows the session in use** for the *same* app. An instance attaches on its first tool call (`lazy`, the default); if a sibling holds that app, it yields and gets it back on its own next tool call. An instance kicked by a sibling does not fight back.
-- **A session attaches to its own app.** The server reads the app id from the repo it runs in (`android/app/build.gradle` `applicationId`, the iOS bundle id, or Expo's `app.json`; `MCP_RN_APP` overrides) and finds that app across Metro ports 8081–8085 — a session in the wms repo attaches to wms even while picking runs on 8081. `select_target` also takes an `app` id.
+- **A session attaches to its own app.** The server reads the app id from the repo it runs in (`android/app/build.gradle` `applicationId`, the iOS bundle id, or Expo's `app.json`; `MCP_RN_APP` overrides) and finds that app across Metro ports 8081–8085 — a session in one app's repo attaches to that app even while another app runs on 8081. `select_target` also takes an `app` id.
 - **No orphans.** The server exits when its MCP client goes away (stdin closes or the parent process dies).
 - `health_check` shows the session app, who holds the debugger, the other instances and their apps, and who serves the SDK channel. `list_targets` marks targets held by other instances with ⊙.
 

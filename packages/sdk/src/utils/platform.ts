@@ -23,7 +23,7 @@ export function getDefaultHost(): string {
 
 /**
  * Application id, from the `app=` query param Metro puts in the bundle URL
- * (e.g. "in.janis.picking.beta"). Null on embedded bundles.
+ * (e.g. "com.example.shop.beta"). Null on embedded bundles.
  */
 export function getAppId(): string | null {
   const scriptURL = getScriptURL();

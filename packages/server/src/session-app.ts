@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'fs';
 import path from 'path';
 
 export interface SessionApp {
-  /** Application id prefixes this session belongs to (flavors add a suffix: in.janis.picking → in.janis.picking.beta). */
+  /** Application id prefixes this session belongs to (flavors add a suffix: com.example.shop → com.example.shop.beta). */
   ids: string[];
   /** Where the ids came from, for the health report. */
   source: string | null;

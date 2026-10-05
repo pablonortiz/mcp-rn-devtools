@@ -38,11 +38,11 @@ describe('health report', () => {
   it('Metro down but an app on another Metro → points at it', async () => {
     const { cm, bridge } = disconnected();
     const probes = quietProbes({
-      scanMetroPorts: async () => [{ port: 8083, targets: [fuseboxTarget('wms-1', 'ws://x')] }],
+      scanMetroPorts: async () => [{ port: 8083, targets: [fuseboxTarget('stock-1', 'ws://x')] }],
     });
     const report = await buildHealthReport(cm, bridge, probes);
     expect(firstLine(report)).toMatch(/^BLOCKED: Metro is not on :8081, but another Metro has an app/);
-    expect(report).toContain(':8083 wms-1');
+    expect(report).toContain(':8083 stock-1');
   });
 
   it('no targets and the app points elsewhere → names the port from logcat', async () => {

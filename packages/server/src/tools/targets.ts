@@ -44,7 +44,7 @@ export function registerTargetTools(
 
   server.tool(
     'select_target',
-    'Attach to a specific target and pin it for reconnects: by target_id (from list_targets, optionally with metro_port) or by app id prefix (e.g. "in.janis.wms"), searched across Metro ports. Takes the debugger from any other instance holding that target.',
+    'Attach to a specific target and pin it for reconnects: by target_id (from list_targets, optionally with metro_port) or by app id prefix (e.g. "com.example.stock"), searched across Metro ports. Takes the debugger from any other instance holding that target.',
     {
       target_id: z.string().optional().describe('Target ID from list_targets'),
       metro_port: z
@@ -52,7 +52,7 @@ export function registerTargetTools(
         .int()
         .optional()
         .describe('Metro port the target is registered on (default: the current one)'),
-      app: z.string().optional().describe('Application id (or prefix) to attach to, e.g. "in.janis.wms"'),
+      app: z.string().optional().describe('Application id (or prefix) to attach to, e.g. "com.example.stock"'),
     },
     async ({ target_id, metro_port, app }) => {
       try {
